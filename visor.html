@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Map</title>
+<style>
+:root {
+  --bg: #f4f5f8; --panel: #ffffff; --panel2: #f8f9fb; --text: #1b2130; --muted: #5f6879;
+  --faint: #9aa1ae; --line: #e1e4ea; --hover: #eef1f6; --accent: #3457d5; --accent-soft: #e8edfd;
+  --mark: #ffe27a; --sombra: 0 1px 2px rgba(20,30,50,.06), 0 2px 8px rgba(20,30,50,.05);
+  --flecha: #aab2c1; --escribe: #e8590c; --alerta: #d03b3b;
+  --c-TABLA: #2f6fdb; --c-VISTA: #0c93a3; --c-PROC: #7b4cd0; --c-FUNCION: #2a9555;
+  --c-TRIGGER: #c9711a; --c-SINONIMO: #6c778a; --c-SECUENCIA: #6c778a; --c-JOB: #cf3f78;
+  --c-EXTERNO: #7f889b; --c-NO_EXISTE: #d03b3b;
+  --mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11141a; --panel: #191d25; --panel2: #1e232d; --text: #e5e8ee; --muted: #9ba3b4;
+    --faint: #687084; --line: #2a303c; --hover: #232935; --accent: #7e98ff; --accent-soft: #232d4f;
+    --mark: #6e5b10; --sombra: 0 1px 2px rgba(0,0,0,.3), 0 2px 8px rgba(0,0,0,.25);
+    --flecha: #566073; --escribe: #ff7b35; --alerta: #f26666;
+    --c-TABLA: #5d95f5; --c-VISTA: #2dbccb; --c-PROC: #a584f2; --c-FUNCION: #4cc27d;
+    --c-TRIGGER: #eaa04c; --c-SINONIMO: #97a1b3; --c-SECUENCIA: #97a1b3; --c-JOB: #f0699f;
+    --c-EXTERNO: #8f98aa; --c-NO_EXISTE: #f26666;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11141a; --panel: #191d25; --panel2: #1e232d; --text: #e5e8ee; --muted: #9ba3b4;
+  --faint: #687084; --line: #2a303c; --hover: #232935; --accent: #7e98ff; --accent-soft: #232d4f;
+  --mark: #6e5b10; --sombra: 0 1px 2px rgba(0,0,0,.3), 0 2px 8px rgba(0,0,0,.25);
+  --flecha: #566073; --escribe: #ff7b35; --alerta: #f26666;
+  --c-TABLA: #5d95f5; --c-VISTA: #2dbccb; --c-PROC: #a584f2; --c-FUNCION: #4cc27d;
+  --c-TRIGGER: #eaa04c; --c-SINONIMO: #97a1b3; --c-SECUENCIA: #97a1b3; --c-JOB: #f0699f;
+  --c-EXTERNO: #8f98aa; --c-NO_EXISTE: #f26666;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+
+/* ---------- barra superior ---------- */
+.barra {
+  display: flex; align-items: center; gap: 16px; padding: 10px 16px;
+  background: var(--panel); border-bottom: 1px solid var(--line); flex: none;
+}
+.marca { font-weight: 700; font-size: 15px; white-space: nowrap; cursor: pointer; background: none; border: 0; padding: 0; }
+.buscador { position: relative; flex: 1; max-width: 620px; }
+.buscador input {
+  width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel2); outline: none;
+}
+.buscador input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+#resultados {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: var(--sombra); max-height: 60vh; overflow: auto; padding: 4px;
+}
+#resultados .fila { border-radius: 6px; }
+#resultados .fila.activa { background: var(--accent-soft); }
+#resultados .nada { padding: 10px; color: var(--muted); }
+.origen { margin-left: auto; color: var(--faint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.boton {
+  border: 1px solid var(--line); background: var(--panel); border-radius: 7px;
+  padding: 6px 12px; min-height: 34px; white-space: nowrap;
+}
+.boton:hover { background: var(--hover); }
+
+.tag {
+  --c: var(--c-TABLA);
+  display: inline-block; font: 600 10.5px/1 system-ui, sans-serif; letter-spacing: .03em;
+  padding: 3px 5px; border-radius: 4px; flex: none; text-align: center; min-width: 38px;
+  color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent);
+}
+.t-TABLA { --c: var(--c-TABLA); } .t-VISTA { --c: var(--c-VISTA); } .t-PROC { --c: var(--c-PROC); }
+.t-FUNCION { --c: var(--c-FUNCION); } .t-TRIGGER { --c: var(--c-TRIGGER); }
+.t-SINONIMO { --c: var(--c-SINONIMO); } .t-SECUENCIA { --c: var(--c-SECUENCIA); }
+.t-JOB { --c: var(--c-JOB); } .t-EXTERNO { --c: var(--c-EXTERNO); } .t-NO_EXISTE { --c: var(--c-NO_EXISTE); }
+
+/* ---------- mapa ---------- */
+.cuerpo { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 400px; min-height: 0; }
+.zona-grafo { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.controles {
+  display: flex; align-items: center; gap: 12px; padding: 8px 16px;
+  border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.controles .etiqueta { color: var(--muted); font-size: 13px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: var(--panel); padding: 5px 12px; min-height: 32px; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.controles .boton:last-child { margin-left: auto; }
+
+#lienzo { position: relative; flex: 1; overflow: hidden; cursor: grab; touch-action: none; }
+#lienzo.arrastrando { cursor: grabbing; }
+#mundo { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+#aristas { position: absolute; overflow: visible; pointer-events: none; }
+#aristas path { fill: none; stroke: var(--flecha); stroke-width: 1.6; transition: opacity .12s; }
+#aristas path.escribe { stroke: var(--escribe); }
+#aristas path.posible { stroke-dasharray: 5 4; }
+#aristas marker path { fill: var(--flecha); stroke: none; }
+#aristas marker.escribe path { fill: var(--escribe); }
+
+.nodo {
+  --c: var(--c-TABLA);
+  position: absolute; width: 236px; height: 30px; display: flex; align-items: center; gap: 7px;
+  padding: 0 8px 0 6px; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--c); border-radius: 6px; box-shadow: var(--sombra);
+  cursor: pointer; user-select: none; transition: opacity .12s;
+}
+.nodo:hover { background: var(--hover); }
+.nodo .nom { font: 12px/1 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nodo .nom small { color: var(--faint); }
+.nodo.t-NO_EXISTE, .nodo.t-EXTERNO { border-style: dashed; border-left-style: solid; }
+.nodo.foco {
+  height: 38px; border: 2px solid var(--c); border-left-width: 5px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 16%, transparent), var(--sombra); cursor: default;
+}
+.nodo.foco .nom { font-size: 13px; font-weight: 600; }
+.mas {
+  position: absolute; width: 236px; height: 30px; display: flex; align-items: center; justify-content: center;
+  border: 1px dashed var(--faint); border-radius: 6px; color: var(--muted); background: var(--panel2);
+  font-size: 12.5px; cursor: pointer;
+}
+.mas:hover { color: var(--text); border-color: var(--accent); }
+.cabecera-col {
+  position: absolute; width: 236px; text-align: center; font-size: 12px; color: var(--muted);
+  font-weight: 600; white-space: nowrap;
+}
+#mundo.enfocado .nodo, #mundo.enfocado #aristas path { opacity: .15; }
+#mundo.enfocado .nodo.luz, #mundo.enfocado #aristas path.luz { opacity: 1; }
+#mundo.enfocado #aristas path.luz { stroke-width: 2.4; }
+
+#vacio {
+  position: absolute; left: 0; right: 0; bottom: 30%; text-align: center; color: var(--muted);
+  pointer-events: none; padding: 0 20px;
+}
+.leyenda {
+  position: absolute; left: 12px; bottom: 12px; display: flex; gap: 14px; align-items: center;
+  font-size: 12px; color: var(--muted); pointer-events: none;
+  background: color-mix(in srgb, var(--bg) 85%, transparent); padding: 4px 8px; border-radius: 6px;
+}
+.leyenda i { display: inline-block; width: 18px; border-top: 2px solid var(--flecha); vertical-align: middle; margin-right: 5px; }
+.leyenda i.escribe { border-color: var(--escribe); }
+.leyenda i.posible { border-top-style: dashed; }
+
+/* ---------- panel ---------- */
+#panel { border-left: 1px solid var(--line); background: var(--panel); overflow: auto; min-height: 0; }
+.ficha { padding: 18px 20px 14px; }
+.ficha .tipo { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+.ficha h2 { font: 600 16px/1.35 var(--mono); margin: 8px 0 4px; word-break: break-all; }
+.ficha .datos { color: var(--muted); font-size: 13px; }
+.nota { font-size: 13px; color: var(--muted); border-left: 3px solid var(--line); padding: 2px 0 2px 10px; margin: 12px 0 0; }
+.nota.alerta { border-color: var(--alerta); }
+.acciones { display: flex; gap: 6px; margin-top: 14px; }
+.impacto { padding: 16px 20px 10px; border-top: 1px solid var(--line); }
+.impacto .frase { font-size: 15px; margin: 0; }
+.impacto .frase strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.impacto .desglose { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+.impacto .acciones { margin-top: 10px; }
+.grupo h4 {
+  margin: 0; padding: 7px 20px; font-size: 12px; font-weight: 600; color: var(--muted);
+  background: var(--panel2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
+.fila {
+  display: flex; align-items: center; gap: 8px; padding: 6px 20px; cursor: pointer; min-height: 36px;
+}
+.fila:hover { background: var(--hover); }
+.fila .nom { font: 12.5px/1.3 var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fila .extra { margin-left: auto; color: var(--faint); font-size: 12px; white-space: nowrap; }
+.fila .extra.escribe { color: var(--escribe); }
+details.usa { border-top: 1px solid var(--line); margin-top: 8px; }
+details.usa summary { padding: 14px 20px; cursor: pointer; font-weight: 600; font-size: 14px; }
+details.usa summary span { color: var(--muted); font-weight: 400; }
+.vacia { padding: 4px 20px 16px; color: var(--muted); font-size: 13px; }
+
+/* ---------- ventana de código ---------- */
+dialog {
+  width: min(1000px, calc(100vw - 32px)); height: min(80vh, 900px); padding: 0; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--panel); color: var(--text); box-shadow: 0 10px 40px rgba(0,0,0,.25);
+}
+dialog[open] { display: flex; flex-direction: column; }
+dialog::backdrop { background: rgba(10, 14, 22, .45); }
+dialog header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+dialog header h3 { font: 600 14px var(--mono); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+dialog header .boton:first-of-type { margin-left: auto; }
+dialog .caja-codigo { flex: 1; overflow: auto; }
+.codigo {
+  margin: 0; padding: 10px 0; font: 12.5px/1.55 var(--mono); tab-size: 4; counter-reset: l;
+  white-space: pre; min-width: max-content;
+}
+.codigo span.l { display: block; padding-right: 16px; }
+.codigo span.l::before {
+  counter-increment: l; content: counter(l); display: inline-block; width: 50px; padding-right: 12px;
+  text-align: right; color: var(--faint); user-select: none;
+}
+.codigo mark { background: var(--mark); color: inherit; border-radius: 2px; }
+
+/* ---------- inicio ---------- */
+/* Ocupa toda la ventana: las columnas se ensanchan y las listas llegan hasta abajo. */
+#inicio { flex: 1; display: flex; min-height: 0; padding: 36px 32px 60px; }
+.inicio { flex: 1; width: 100%; max-width: 1800px; margin: 0 auto; display: flex; flex-direction: column; min-height: 0; }
+.inicio h1 { font-size: 26px; margin: 0 0 6px; }
+.inicio > p { color: var(--muted); margin: 0 0 28px; font-size: 15px; }
+.cajas { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 20px; }
+.caja {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  display: flex; flex-direction: column; min-height: 0;
+}
+.caja h3 { margin: 0; padding: 14px 16px 2px; font-size: 15px; }
+.caja > p { margin: 0; padding: 0 16px 12px; color: var(--muted); font-size: 13px; }
+.caja .lista { flex: 1; min-height: 0; overflow: auto; border-top: 1px solid var(--line); }
+.caja .fila { padding: 6px 16px; }
+.avisos { margin-top: 20px; }
+
+/* ---------- logo de la empresa (marca de agua) ---------- */
+.marca-agua {
+  position: fixed; right: 18px; bottom: 14px; z-index: 5; pointer-events: none;
+  display: flex; align-items: center; gap: 6px; opacity: .55;
+  color: #2b6cb7; font-size: 11.5px; font-weight: 600;
+}
+.marca-agua svg { width: 34px; height: 34px; }
+/* En el mapa, dentro del dibujo y no encima de la lista del panel (400 px). */
+body.con-mapa .marca-agua { right: calc(400px + 18px); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .marca-agua { color: #6aa2e8; } }
+:root[data-theme="dark"] .marca-agua { color: #6aa2e8; }
+
+@media (max-width: 900px) {
+  body { overflow: auto; }
+  .origen { display: none; }
+  .cuerpo { grid-template-columns: 1fr; grid-template-rows: 60vh auto; }
+  #panel { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+  .leyenda { display: none; }
+  body.con-mapa .marca-agua { right: 18px; }
+  #inicio { display: block; padding: 24px 16px 60px; }
+  .cajas { grid-template-columns: 1fr; }
+  .caja .lista { max-height: 420px; }
+}
+</style>
+</head>
+<body>
+<header class="barra">
+  <button class="marca" id="irInicio" title="Back to start">SQL Map</button>
+  <div class="buscador">
+    <input id="q" type="search" placeholder="Search for a table, view, procedure…" autocomplete="off" spellcheck="false" aria-label="Search for an object">
+    <div id="resultados" hidden></div>
+  </div>
+  <span class="origen" id="origen"></span>
+</header>
+
+<section id="inicio" hidden></section>
+
+<div class="cuerpo" id="cuerpo" hidden>
+  <section class="zona-grafo">
+    <div class="controles">
+      <button class="boton" id="atras" title="Go back to the previous object">← Back</button>
+      <span class="etiqueta">Impact levels</span>
+      <div class="seg" id="niveles" role="group" aria-label="Impact levels"></div>
+      <button class="boton" id="encajar" title="Fit the whole map on screen">Fit</button>
+    </div>
+    <div id="lienzo">
+      <div id="mundo"><svg id="aristas"></svg><div id="nodos"></div></div>
+      <div id="vacio" hidden></div>
+    </div>
+    <div class="leyenda"><span><i></i>uses</span><span><i class="escribe"></i>writes</span><span><i class="posible"></i>possible (dynamic SQL)</span><span>· Click an object to center it</span></div>
+  </section>
+  <aside id="panel"></aside>
+</div>
+
+<dialog id="ventanaCodigo">
+  <header><h3 id="tituloCodigo"></h3><button class="boton" id="copiarCodigo">Copy</button><button class="boton" id="cerrarCodigo">Close</button></header>
+  <div class="caja-codigo"><pre class="codigo" id="codigo"></pre></div>
+</dialog>
+
+<div class="marca-agua" aria-hidden="true">
+  <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M50 17 L89 36 L50 55 L11 36 Z"/>
+    <path d="M11 50 L50 69 L89 50"/>
+    <path d="M11 64 L50 83 L89 64"/>
+  </svg>
+  <span>© 2026</span>
+</div>
+
+<script id="datos" type="application/json">__DATOS__</script>
+<script>
+'use strict';
+
+// ============================================================================
+// Datos
+// ============================================================================
+const D = JSON.parse(document.getElementById('datos').textContent);
+const N = D.nodos, A = D.aristas, TA = D.tiposArista;
+const VARIAS_BASES = D.meta.bases.length > 1;
+// [name, short label, singular, plural]
+const TIPOS = {
+  TABLA: ['Table', 'TABLE', 'table', 'tables'], VISTA: ['View', 'VIEW', 'view', 'views'],
+  PROC: ['Stored procedure', 'PROC', 'procedure', 'procedures'], FUNCION: ['Function', 'FUNC', 'function', 'functions'],
+  TRIGGER: ['Trigger', 'TRIG', 'trigger', 'triggers'], SINONIMO: ['Synonym', 'SYN', 'synonym', 'synonyms'],
+  SECUENCIA: ['Sequence', 'SEQ', 'sequence', 'sequences'], JOB: ['SQL Agent job', 'JOB', 'job', 'jobs'],
+  EXTERNO: ['In another database', 'EXT', 'object in another database', 'objects in other databases'],
+  NO_EXISTE: ['Does not exist', '??', 'missing object', 'missing objects'],
+};
+const ORDEN_TIPOS = Object.keys(TIPOS);
+
+const indice = new Map(N.map((n, i) => [n.k, i]));
+const sale = N.map(() => []), entra = N.map(() => []);
+A.forEach((a, j) => { sale[a[0]].push(j); entra[a[1]].push(j); });
+const textoBusqueda = N.map(n => ((VARIAS_BASES ? n.b + '.' : '') + n.e + '.' + n.n).toLowerCase());
+const fmt = new Intl.NumberFormat('en-US');
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function nombre(i, conBase) {
+  const n = N[i];
+  if (n.t === 'JOB') return n.n;
+  return ((conBase || VARIAS_BASES || n.t === 'EXTERNO') ? n.b + '.' : '') + n.e + '.' + n.n;
+}
+function nombreHTML(i) {
+  const n = N[i];
+  if (n.t === 'JOB') return esc(n.n);
+  const base = (VARIAS_BASES || n.t === 'EXTERNO') ? esc(n.b) + '.' : '';
+  return `<small>${base}${esc(n.e)}.</small>${esc(n.n)}`;
+}
+const tag = t => `<span class="tag t-${t}">${TIPOS[t][1]}</span>`;
+const cuantos = (n, t) => `${fmt.format(n)} ${n === 1 ? TIPOS[t][2] : TIPOS[t][3]}`;
+function enumerar(partes) {
+  return partes.length < 2 ? partes.join('') : partes.slice(0, -1).join(', ') + ' and ' + partes[partes.length - 1];
+}
+
+// ============================================================================
+// Recorrido: "abajo" = lo que usa a este objeto (lo que se rompe si cambia);
+// "arriba" = lo que este objeto usa.
+// ============================================================================
+function vecinos(i, abajo) {
+  return (abajo ? entra[i] : sale[i]).map(j => [abajo ? A[j][0] : A[j][1], j]);
+}
+function recorrer(foco, abajo, max) {
+  const nivel = new Map([[foco, 0]]), via = new Map();
+  let frontera = [foco];
+  for (let d = 1; d <= max && frontera.length; d++) {
+    const siguiente = [];
+    for (const i of frontera) for (const [v, j] of vecinos(i, abajo)) {
+      if (!nivel.has(v)) { nivel.set(v, d); via.set(v, [i, j]); siguiente.push(v); }
+    }
+    frontera = siguiente;
+  }
+  return { nivel, via };
+}
+
+// ============================================================================
+// Estado
+// ============================================================================
+const estado = { foco: null, niveles: 2, abiertos: new Set() };
+try { const v = Number(localStorage.getItem('mapa-sql-niveles')); if (v) estado.niveles = v; } catch (e) { }
+
+// ============================================================================
+// Dibujo: lo que usa a la izquierda, el objeto en el centro, lo afectado a la derecha
+// ============================================================================
+const COLW = 310, NODEW = 236, NODEH = 30, FILAH = 38, MAXCOL = 40;
+const mundo = $('mundo'), lienzo = $('lienzo'), svg = $('aristas'), capaNodos = $('nodos');
+let vista = null;
+
+function rangoTipo(i) { return ORDEN_TIPOS.indexOf(N[i].t); }
+function comparar(a, b) { return rangoTipo(a) - rangoTipo(b) || nombre(a).localeCompare(nombre(b)); }
+
+function dibujar(reencuadrar) {
+  const f = estado.foco;
+  const abajo = recorrer(f, true, estado.niveles), arriba = recorrer(f, false, 1);
+  const nivel = new Map([[f, 0]]);
+  abajo.nivel.forEach((d, v) => { if (v !== f) nivel.set(v, d); });
+  arriba.nivel.forEach((d, v) => { if (!nivel.has(v)) nivel.set(v, -d); });
+
+  const cols = new Map();
+  for (const [v, l] of nivel) { if (!cols.has(l)) cols.set(l, []); cols.get(l).push(v); }
+
+  // Enlaces entre columnas contiguas, siempre de izquierda a derecha.
+  const enlaces = [];
+  for (const [v, l] of nivel) {
+    if (l > 0) { for (const [u, j] of vecinos(v, false)) if (nivel.get(u) === l - 1) enlaces.push([u, v, j]); }
+    else if (l < 0) { for (const [w, j] of vecinos(v, true)) if (nivel.get(w) === l + 1) enlaces.push([v, w, j]); }
+  }
+  const haciaFoco = new Map();
+  for (const [u, v] of enlaces) {
+    const [lejos, cerca] = Math.abs(nivel.get(u)) > Math.abs(nivel.get(v)) ? [u, v] : [v, u];
+    if (!haciaFoco.has(lejos)) haciaFoco.set(lejos, []);
+    haciaFoco.get(lejos).push(cerca);
+  }
+
+  // Cada columna ordenada por la posición de sus vecinos (menos cruces), con tope.
+  const y = new Map([[f, 0]]);
+  const columnas = new Map([[0, { visibles: [f], ocultos: 0, total: 1, huecos: 1 }]]);
+  const niveles = [...cols.keys()].filter(l => l !== 0).sort((a, b) => Math.abs(a) - Math.abs(b));
+  for (const l of niveles) {
+    const lista = cols.get(l);
+    const peso = new Map(lista.map(v => {
+      const vs = (haciaFoco.get(v) || []).filter(x => y.has(x));
+      return [v, vs.length ? vs.reduce((s, x) => s + y.get(x), 0) / vs.length : 1e9];
+    }));
+    lista.sort((a, b) => peso.get(a) - peso.get(b) || comparar(a, b));
+    const visibles = estado.abiertos.has(l) ? lista : lista.slice(0, MAXCOL);
+    const huecos = visibles.length + (visibles.length < lista.length ? 1 : 0);
+    visibles.forEach((v, k) => y.set(v, (k - (huecos - 1) / 2) * FILAH));
+    columnas.set(l, { visibles, ocultos: lista.length - visibles.length, total: lista.length, huecos });
+  }
+
+  let html = '';
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const [l, c] of columnas) {
+    const x = l * COLW - NODEW / 2;
+    const tope = -((c.huecos - 1) / 2) * FILAH - NODEH / 2;
+    if (l !== 0) {
+      const titulo = l === -1 ? 'Uses' : l === 1 ? 'Used by' : `Level ${l}`;
+      html += `<div class="cabecera-col" style="left:${x}px;top:${tope - 26}px">${titulo} (${fmt.format(c.total)})</div>`;
+    }
+    for (const v of c.visibles) {
+      const n = N[v], alto = v === f ? 38 : NODEH;
+      html += `<div class="nodo t-${n.t}${v === f ? ' foco' : ''}" data-i="${v}" style="left:${x}px;top:${y.get(v) - alto / 2}px" title="${esc(TIPOS[n.t][0] + ' · ' + nombre(v, true))}">${tag(n.t)}<span class="nom">${nombreHTML(v)}</span></div>`;
+    }
+    if (c.ocultos) {
+      const ym = ((c.huecos - 1) / 2) * FILAH - NODEH / 2;
+      html += `<div class="mas" data-nivel="${l}" style="left:${x}px;top:${ym}px">Show ${fmt.format(c.ocultos)} more</div>`;
+    }
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x + NODEW);
+    minY = Math.min(minY, tope - 30); maxY = Math.max(maxY, -tope);
+  }
+  capaNodos.innerHTML = html;
+
+  let rutas = '';
+  for (const [u, v, j] of enlaces) {
+    if (!y.has(u) || !y.has(v)) continue;
+    const x1 = nivel.get(u) * COLW + NODEW / 2, y1 = y.get(u);
+    const x2 = nivel.get(v) * COLW - NODEW / 2 - 3, y2 = y.get(v);
+    const dx = (x2 - x1) / 2;
+    const a = A[j], escribe = TA[a[2]] === 'escribe';
+    const clases = (escribe ? 'escribe' : '') + (a[3] ? ' posible' : '');
+    rutas += `<path class="${clases}" data-k="${u}>${v}" marker-end="url(#${escribe ? 'm-escribe' : 'm-usa'})" d="M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}"/>`;
+  }
+  const marcador = (id, clase) => `<marker id="${id}" class="${clase}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,1 L10,5 L0,9 z"/></marker>`;
+  const w = maxX - minX + 40, h = maxY - minY + 40;
+  svg.setAttribute('viewBox', `${minX - 20} ${minY - 20} ${w} ${h}`);
+  Object.assign(svg.style, { left: (minX - 20) + 'px', top: (minY - 20) + 'px', width: w + 'px', height: h + 'px' });
+  svg.innerHTML = `<defs>${marcador('m-usa', '')}${marcador('m-escribe', 'escribe')}</defs>${rutas}`;
+
+  vista = { nivel, abajo, arriba, y, caja: { minX, maxX, minY, maxY } };
+  const solo = nivel.size === 1;
+  $('vacio').hidden = !solo;
+  if (solo) $('vacio').textContent = 'Nothing in the database uses it, and it uses nothing.';
+  if (reencuadrar) encajar(true);
+}
+
+// Al pasar por encima: el camino desde ese objeto hasta el del centro.
+function resaltarCamino(i) {
+  quitarResaltado();
+  const l = vista.nivel.get(i);
+  if (l === undefined || l === 0 || !vista.y.has(i)) return;
+  const via = l > 0 ? vista.abajo.via : vista.arriba.via;
+  const nodos = [i], aristas = [];
+  let v = i;
+  while (v !== estado.foco && via.has(v)) {
+    const [u] = via.get(v);
+    aristas.push(l > 0 ? `${u}>${v}` : `${v}>${u}`);
+    nodos.push(u);
+    v = u;
+  }
+  mundo.classList.add('enfocado');
+  for (const n of nodos) capaNodos.querySelector(`.nodo[data-i="${n}"]`)?.classList.add('luz');
+  for (const k of aristas) svg.querySelector(`path[data-k="${k}"]`)?.classList.add('luz');
+}
+function quitarResaltado() {
+  mundo.classList.remove('enfocado');
+  mundo.querySelectorAll('.luz').forEach(e => e.classList.remove('luz'));
+}
+
+// ============================================================================
+// Mover y ampliar
+// ============================================================================
+const T = { x: 0, y: 0, s: 1 };
+function aplicar() { mundo.style.transform = `translate(${T.x}px,${T.y}px) scale(${T.s})`; }
+function encajar(inicial) {
+  const c = vista.caja, r = lienzo.getBoundingClientRect();
+  const bw = c.maxX - c.minX, bh = c.maxY - c.minY;
+  const s = Math.max(Math.min((r.width - 60) / bw, (r.height - 80) / bh, 1), inicial ? 0.6 : 0.15);
+  T.s = s;
+  T.x = r.width / 2 - ((c.minX + c.maxX) / 2) * s;
+  T.y = inicial && bh * s > r.height ? r.height / 2 : r.height / 2 - ((c.minY + c.maxY) / 2) * s;
+  aplicar();
+}
+lienzo.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = lienzo.getBoundingClientRect();
+  const px = e.clientX - r.left, py = e.clientY - r.top;
+  const s = Math.min(2.5, Math.max(0.12, T.s * Math.exp(-e.deltaY * 0.0015)));
+  T.x = px - (px - T.x) * s / T.s; T.y = py - (py - T.y) * s / T.s; T.s = s;
+  aplicar();
+}, { passive: false });
+let arrastre = null;
+lienzo.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || e.target.closest('.nodo, .mas')) return;
+  arrastre = { x: e.clientX, y: e.clientY, tx: T.x, ty: T.y };
+  lienzo.setPointerCapture(e.pointerId);
+  lienzo.classList.add('arrastrando');
+});
+lienzo.addEventListener('pointermove', e => {
+  if (!arrastre) return;
+  T.x = arrastre.tx + e.clientX - arrastre.x; T.y = arrastre.ty + e.clientY - arrastre.y; aplicar();
+});
+lienzo.addEventListener('pointerup', () => { arrastre = null; lienzo.classList.remove('arrastrando'); });
+
+capaNodos.addEventListener('click', e => {
+  const mas = e.target.closest('.mas');
+  if (mas) { estado.abiertos.add(Number(mas.dataset.nivel)); dibujar(false); return; }
+  const n = e.target.closest('.nodo');
+  if (n && Number(n.dataset.i) !== estado.foco) irA(Number(n.dataset.i));
+});
+capaNodos.addEventListener('mouseover', e => {
+  const n = e.target.closest('.nodo'); if (n) resaltarCamino(Number(n.dataset.i));
+});
+capaNodos.addEventListener('mouseout', e => {
+  const n = e.target.closest('.nodo'); if (n && !n.contains(e.relatedTarget)) quitarResaltado();
+});
+
+// ============================================================================
+// Panel
+// ============================================================================
+function ficha(i) {
+  const n = N[i];
+  const datos = [];
+  if (n.t === 'JOB') {
+    datos.push(n.activo ? 'enabled' : 'disabled', `${n.pasos} ${n.pasos === 1 ? 'step' : 'steps'}`);
+  } else {
+    if (VARIAS_BASES || n.t === 'EXTERNO') datos.push(n.b);
+    if (n.f !== undefined) datos.push(`${fmt.format(n.f)} rows`);
+    if (n.l) datos.push(`${fmt.format(n.l)} lines`);
+    if (n.m) datos.push(`modified ${n.m}`);
+  }
+  let nota = '';
+  if (n.t === 'NO_EXISTE') nota = '<p class="nota alerta">The code refers to it, but it does not exist in the database. It may be created at run time, have been dropped, or be misspelled.</p>';
+  else if (n.t === 'EXTERNO') nota = `<p class="nota">It lives in another database (${esc(n.b)}) that was not extracted, so what happens there is not shown.</p>`;
+  else if (n.cifrado) nota = '<p class="nota alerta">Its code is encrypted or you have no permission to see it.</p>';
+  else if (n.d) nota = '<p class="nota">Uses dynamic SQL: it may touch objects the map cannot see. What could be inferred is shown dashed.</p>';
+  return `<div class="ficha">
+    <div class="tipo">${tag(n.t)} ${TIPOS[n.t][0]}</div>
+    <h2>${esc(n.t === 'JOB' ? n.n : n.e + '.' + n.n)}</h2>
+    <div class="datos">${esc(datos.join(' · '))}</div>
+    ${nota}
+    <div class="acciones">
+      ${n.s ? '<button class="boton" data-accion="codigo">View code</button>' : ''}
+      <button class="boton" data-accion="copiarNombre">Copy name</button>
+    </div>
+  </div>`;
+}
+
+function filasDe(recorrido) {
+  const filas = [];
+  for (const [v, l] of recorrido.nivel) if (v !== estado.foco) filas.push({ v, l, j: recorrido.via.get(v)[1] });
+  return filas.sort((a, b) => a.l - b.l || comparar(a.v, b.v));
+}
+function fila(f, conRelacion) {
+  let extra = '';
+  if (conRelacion) {
+    const a = A[f.j];
+    // En "lo usan", f.v escribe en el del centro; en "lo que usa", el del centro escribe en f.v.
+    if (TA[a[2]] === 'escribe') extra = `<span class="extra escribe">${a[0] === f.v ? 'writes to it' : 'written'}</span>`;
+    else if (a[3]) extra = '<span class="extra">possible</span>';
+  }
+  return `<div class="fila" data-i="${f.v}" title="Click to center it">${tag(N[f.v].t)}<span class="nom">${nombreHTML(f.v)}</span>${extra}</div>`;
+}
+
+let afectados = [];
+function pintarPanel() {
+  const i = estado.foco;
+  afectados = filasDe(recorrer(i, true, Infinity));
+  const usa = filasDe(recorrer(i, false, 1));
+
+  let html = ficha(i) + '<div class="impacto">';
+  if (!afectados.length) {
+    html += `<p class="frase">Nothing in the database depends on it.</p><p class="desglose">An application, report or SSIS package might still use it: the map cannot see those.</p></div>`;
+  } else {
+    const porTipo = new Map();
+    for (const f of afectados) porTipo.set(N[f.v].t, (porTipo.get(N[f.v].t) || 0) + 1);
+    const desglose = ORDEN_TIPOS.filter(t => porTipo.has(t)).map(t => cuantos(porTipo.get(t), t));
+    html += `<p class="frase">Changing it affects <strong>${fmt.format(afectados.length)}</strong> ${afectados.length === 1 ? 'object' : 'objects'}</p>
+      <p class="desglose">${esc(enumerar(desglose))}</p>
+      <div class="acciones"><button class="boton" data-accion="copiarLista">Copy list for Excel</button></div></div>`;
+    let actual = 0;
+    for (const f of afectados) {
+      if (f.l !== actual) {
+        if (actual) html += '</div>';
+        actual = f.l;
+        const n = afectados.filter(x => x.l === f.l).length;
+        html += `<div class="grupo"><h4>${f.l === 1 ? 'Used directly by' : `Indirectly · level ${f.l}`} (${fmt.format(n)})</h4>`;
+      }
+      html += fila(f, f.l === 1);
+    }
+    html += '</div>';
+  }
+  if (usa.length) {
+    html += `<details class="usa"><summary>What it uses <span>(${fmt.format(usa.length)})</span></summary>${usa.map(f => fila(f, true)).join('')}</details>`;
+  }
+  $('panel').innerHTML = html;
+  $('panel').scrollTop = 0;
+}
+
+async function copiar(texto) {
+  try { await navigator.clipboard.writeText(texto); }
+  catch (e) {
+    const t = document.createElement('textarea'); t.value = texto; document.body.appendChild(t);
+    t.select(); document.execCommand('copy'); t.remove();
+  }
+}
+function confirmar(boton) {
+  const antes = boton.textContent; boton.textContent = 'Copied';
+  setTimeout(() => { boton.textContent = antes; }, 1400);
+}
+
+$('panel').addEventListener('click', e => {
+  const b = e.target.closest('[data-accion]');
+  if (b) {
+    const i = estado.foco;
+    if (b.dataset.accion === 'codigo') abrirCodigo(i);
+    if (b.dataset.accion === 'copiarNombre') { copiar(nombre(i, VARIAS_BASES)); confirmar(b); }
+    if (b.dataset.accion === 'copiarLista') {
+      const lineas = [['Level', 'Type', 'Database', 'Schema', 'Name'].join('\t'),
+        ...afectados.map(f => { const n = N[f.v]; return [f.l, TIPOS[n.t][0], n.b, n.e, n.n].join('\t'); })];
+      copiar(lineas.join('\r\n')); confirmar(b);
+    }
+    return;
+  }
+  const f = e.target.closest('.fila[data-i]');
+  if (f) irA(Number(f.dataset.i));
+});
+$('panel').addEventListener('mouseover', e => {
+  const f = e.target.closest('.fila[data-i]'); if (f) resaltarCamino(Number(f.dataset.i));
+});
+$('panel').addEventListener('mouseleave', quitarResaltado);
+
+// Código en una ventana aparte, con el objeto anterior resaltado si aparece.
+function abrirCodigo(i) {
+  const n = N[i];
+  let re = null;
+  const previo = historial[historial.length - 2];
+  if (previo !== undefined && previo !== i && N[previo].t !== 'JOB') {
+    const nom = N[previo].n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    re = new RegExp(`(?<![\\w@#$])(\\[?${esc(nom)}\\]?)(?![\\w@#$])`, 'gi');
+  }
+  $('tituloCodigo').textContent = nombre(i);
+  $('codigo').innerHTML = n.s.split(/\r?\n/).map(l => {
+    let h = esc(l);
+    if (re) h = h.replace(re, '<mark>$1</mark>');
+    return `<span class="l">${h || ' '}</span>`;
+  }).join('');
+  $('ventanaCodigo').showModal();
+  const m = $('codigo').querySelector('mark');
+  if (m) m.scrollIntoView({ block: 'center' }); else $('ventanaCodigo').querySelector('.caja-codigo').scrollTop = 0;
+}
+$('cerrarCodigo').addEventListener('click', () => $('ventanaCodigo').close());
+$('copiarCodigo').addEventListener('click', e => { copiar(N[estado.foco].s); confirmar(e.target); });
+
+// ============================================================================
+// Controles
+// ============================================================================
+const OPCIONES = [[1, '1'], [2, '2'], [3, '3'], [Infinity, 'All']];
+function ponerNiveles() {
+  $('niveles').innerHTML = OPCIONES.map(([v, t]) => `<button data-v="${v}" aria-pressed="${v === estado.niveles}">${t}</button>`).join('');
+}
+$('niveles').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  estado.niveles = Number(b.dataset.v); estado.abiertos.clear();
+  try { localStorage.setItem('mapa-sql-niveles', String(estado.niveles)); } catch (err) { }
+  ponerNiveles(); dibujar(true);
+});
+$('encajar').addEventListener('click', () => encajar(false));
+$('atras').addEventListener('click', () => history.back());
+
+// ============================================================================
+// Búsqueda
+// ============================================================================
+const q = $('q'), resultados = $('resultados');
+let encontrados = [], activo = 0;
+function buscar(texto) {
+  texto = texto.trim().toLowerCase();
+  if (!texto) return [];
+  const partes = texto.split(/\s+/);
+  const res = [];
+  for (let i = 0; i < N.length; i++) {
+    const t = textoBusqueda[i];
+    if (!partes.every(p => t.includes(p))) continue;
+    const n = N[i].n.toLowerCase();
+    const puntos = n === texto || t === texto ? 0 : n.startsWith(texto) ? 1 : t.startsWith(texto) ? 2 : n.includes(texto) ? 3 : 4;
+    res.push([puntos, n.length, i]);
+  }
+  res.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  return res.slice(0, 60).map(r => r[2]);
+}
+function pintarResultados() {
+  if (!q.value.trim()) { resultados.hidden = true; return; }
+  resultados.hidden = false;
+  resultados.innerHTML = encontrados.length
+    ? encontrados.map((i, k) => `<div class="fila${k === activo ? ' activa' : ''}" data-i="${i}">${tag(N[i].t)}<span class="nom">${nombreHTML(i)}</span></div>`).join('')
+    : '<div class="nada">No object matches.</div>';
+  resultados.querySelector('.activa')?.scrollIntoView({ block: 'nearest' });
+}
+q.addEventListener('input', () => { encontrados = buscar(q.value); activo = 0; pintarResultados(); });
+q.addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown') { activo = Math.min(activo + 1, encontrados.length - 1); pintarResultados(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { activo = Math.max(activo - 1, 0); pintarResultados(); e.preventDefault(); }
+  else if (e.key === 'Enter' && encontrados.length) elegir(encontrados[activo]);
+  else if (e.key === 'Escape') { resultados.hidden = true; q.blur(); }
+});
+q.addEventListener('focus', () => { if (q.value.trim()) pintarResultados(); });
+resultados.addEventListener('mousedown', e => {
+  const f = e.target.closest('.fila'); if (f) { e.preventDefault(); elegir(Number(f.dataset.i)); }
+});
+document.addEventListener('click', e => { if (!e.target.closest('.buscador')) resultados.hidden = true; });
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) { e.preventDefault(); q.focus(); q.select(); }
+});
+function elegir(i) { resultados.hidden = true; q.value = ''; q.blur(); irA(i); }
+
+// ============================================================================
+// Inicio
+// ============================================================================
+function pintarInicio() {
+  const m = D.meta;
+  const usadoPor = i => entra[i].length;
+  const top = N.map((n, i) => i).filter(i => !['JOB', 'NO_EXISTE', 'EXTERNO'].includes(N[i].t) && usadoPor(i) > 0)
+    .sort((a, b) => usadoPor(b) - usadoPor(a)).slice(0, 50);
+  const rotos = N.map((n, i) => i).filter(i => N[i].t === 'NO_EXISTE').sort((a, b) => usadoPor(b) - usadoPor(a));
+  const lista = (ids, extra) => `<div class="lista">${ids.map(i => `<div class="fila" data-i="${i}">${tag(N[i].t)}<span class="nom">${nombreHTML(i)}</span><span class="extra">${esc(extra(i))}</span></div>`).join('')}</div>`;
+  const tipos = ['TABLA', 'VISTA', 'PROC', 'FUNCION', 'TRIGGER', 'JOB'].filter(t => m.porTipo[t]).map(t => cuantos(m.porTipo[t], t));
+  $('inicio').innerHTML = `<div class="inicio">
+    <p><strong>${esc(m.bases.join(', '))} has ${esc(enumerar(tipos))}.</strong></p>
+    <div class="cajas">
+      <div class="caja"><h3>Most used</h3><p>Changing these is the riskiest.</p>
+        ${lista(top, i => `used by ${fmt.format(usadoPor(i))}`)}</div>
+      ${rotos.length ? `<div class="caja"><h3>Broken references (${fmt.format(rotos.length)})</h3><p>The code refers to them, but they don't exist in the database.</p>
+        ${lista(rotos, i => `referenced by ${fmt.format(usadoPor(i))}`)}</div>` : ''}
+    </div>
+    ${m.avisos.length ? `<div class="avisos">${m.avisos.map(a => `<p class="nota alerta">${esc(a)}</p>`).join('')}</div>` : ''}
+  </div>`;
+}
+$('inicio').addEventListener('click', e => {
+  const f = e.target.closest('.fila[data-i]'); if (f) irA(Number(f.dataset.i));
+});
+
+// ============================================================================
+// Navegación: el objeto del centro va en la dirección (atrás y adelante funcionan)
+// ============================================================================
+const historial = [];
+function irA(i) {
+  const h = '#' + encodeURIComponent(N[i].k);
+  if (location.hash === h) ponerFoco(i); else location.hash = h;
+}
+function ponerFoco(i) {
+  $('inicio').hidden = true; $('cuerpo').hidden = false;
+  document.body.classList.add('con-mapa');
+  estado.foco = i; estado.abiertos.clear();
+  if (historial[historial.length - 1] !== i) historial.push(i);
+  document.title = `${N[i].n} · SQL Map`;
+  quitarResaltado();
+  dibujar(true);
+  pintarPanel();
+}
+function leerDireccion() {
+  if ($('ventanaCodigo').open) $('ventanaCodigo').close();
+  const k = decodeURIComponent(location.hash.slice(1));
+  if (k && indice.has(k)) { ponerFoco(indice.get(k)); return; }
+  estado.foco = null;
+  $('cuerpo').hidden = true; $('inicio').hidden = false;
+  document.body.classList.remove('con-mapa');
+  document.title = 'SQL Map';
+  pintarInicio();
+}
+window.addEventListener('hashchange', leerDireccion);
+$('irInicio').addEventListener('click', () => { if (location.hash) location.hash = ''; else leerDireccion(); });
+
+$('origen').textContent = `${D.meta.servidor} · ${D.meta.fecha}`;
+ponerNiveles();
+leerDireccion();
+</script>
+</body>
+</html>
