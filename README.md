@@ -1,4 +1,4 @@
-# SQL Map
+# SQL Lens
 
 Shows what depends on each table, view, procedure or function of a SQL Server
 database: **"if I change this, what breaks?"**. The result is a single `.html`
