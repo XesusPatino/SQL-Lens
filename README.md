@@ -29,7 +29,7 @@ share it.
 change to the code. 
 
 ```bash
-pip install pyinstaller pillow
+pip install pyinstaller pillow pywebview
 ```
 
 ```bash

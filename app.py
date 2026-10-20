@@ -2,8 +2,9 @@
 SQL-Lens as a desktop app: one window with three tabs (Extract, Map, Compare).
 
 A small web server on 127.0.0.1 serves app.html and builds the map and the
-comparison on demand. The window is Edge in "app" mode (no tabs or address
-bar), so nothing has to be installed. build_exe.bat packages it as
+comparison on demand. The window is the program's own (pywebview, on the
+WebView2 that Windows 10/11 already has), or Edge in "app" mode if that is not
+available, so nothing has to be installed. build_exe.bat packages it as
 "SQL-Lens.exe"; it also runs as `python app.py` (`--no-window` only prints the
 address, for testing).
 """
@@ -363,19 +364,49 @@ def aviso_fatal(texto):
         print(texto, file=sys.stderr)
 
 
+def ventana_propia(url):
+    """
+    La ventana del propio programa (pywebview + WebView2): Windows le pone el icono
+    del .exe tal cual, nítido en la barra de tareas. Devuelve False si no se puede
+    (sin pywebview o sin WebView2), para abrir Edge en su lugar.
+    """
+    try:
+        import webview
+    except ImportError:
+        return False
+    try:
+        webview.create_window('SQL-Lens', url, width=1440, height=900, min_size=(900, 600))
+        # Sin modo privado, para que recuerde el tema y lo último elegido.
+        datos = Path(os.environ.get('LOCALAPPDATA') or CARPETA) / 'SQL-Lens'
+        webview.start(gui='edgechromium', private_mode=False, storage_path=str(datos))
+        return True
+    except Exception:  # noqa: BLE001
+        registrar('Own window failed, opening Edge instead:\n' + traceback.format_exc())
+        return False
+
+
 def main():
     try:
         servidor = ThreadingHTTPServer(('127.0.0.1', PUERTO_PREFERIDO), Manejador)
     except OSError:
         servidor = ThreadingHTTPServer(('127.0.0.1', 0), Manejador)
     url = f'http://127.0.0.1:{servidor.server_port}/?t={TOKEN}'
-    threading.Thread(target=vigilar, args=(servidor,), daemon=True).start()
     if '--no-window' in sys.argv:
         # Para pruebas: sin ventana, la dirección sale por la consola (o al log en el .exe, que no tiene).
         print(url, flush=True) if sys.stdout else registrar(url)
-    else:
-        abrir_ventana(url)
-    servidor.serve_forever()
+        threading.Thread(target=vigilar, args=(servidor,), daemon=True).start()
+        servidor.serve_forever()
+        return
+    hilo = threading.Thread(target=servidor.serve_forever, daemon=True)
+    hilo.start()
+    if ventana_propia(url):
+        # Se ha cerrado la ventana: fin. Si queda una extracción a medias, PowerShell la termina sola.
+        servidor.shutdown()
+        return
+    # Plan B: Edge en modo aplicación, y cerrar solo cuando la ventana deje de dar señales.
+    threading.Thread(target=vigilar, args=(servidor,), daemon=True).start()
+    abrir_ventana(url)
+    hilo.join()
 
 
 if __name__ == '__main__':

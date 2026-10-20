@@ -1,6 +1,6 @@
 @echo off
 rem Builds "SQL-Lens.exe" next to this file.
-rem Needs Python with:  pip install pyinstaller pillow
+rem Needs Python with:  pip install pyinstaller pillow pywebview
 rem The build files go to %TEMP%\sql-lens-build, so this folder stays clean.
 
 setlocal
