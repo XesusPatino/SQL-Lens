@@ -1,5 +1,6 @@
 <div align="center">
-# SQL-Lens
+
+ # SQL-Lens
  
 **Dependency maps for SQL Server databases.**<br>
 *If I change this, what breaks?*
@@ -76,6 +77,7 @@ pip install pyinstaller pillow pywebview
 It writes `SQL-Lens.exe` with the icon (`icon.ico`), the screens and `extraer.ps1` inside. Copy just the `.exe` to any machine: it creates its `extractions/` folder next to itself.
  
 </details>
+
 ## From the command line
  
 <details>
@@ -114,6 +116,7 @@ python comparar.py extraction_DEV_MESDB_<date>.json extraction_PRO_MESDB_<date>.
 It writes `comparisons/compare_<A>_vs_<B>_<date>.html`.
  
 </details>
+
 ## Structure
  
 ```
