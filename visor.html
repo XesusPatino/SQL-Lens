@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SQL Map</title>
+<title>SQL-Lens</title>
 <style>
 :root {
   --bg: #f4f5f8; --panel: #ffffff; --panel2: #f8f9fb; --text: #1b2130; --muted: #5f6879;
@@ -251,7 +251,7 @@ body.con-mapa .marca-agua { right: calc(400px + 18px); }
 </head>
 <body>
 <header class="barra">
-  <button class="marca" id="irInicio" title="Back to start">SQL Map</button>
+  <button class="marca" id="irInicio" title="Back to start">SQL-Lens</button>
   <div class="buscador">
     <input id="q" type="search" placeholder="Search for a table, view, procedure…" autocomplete="off" spellcheck="false" aria-label="Search for an object">
     <div id="resultados" hidden></div>
@@ -768,7 +768,7 @@ function ponerFoco(i) {
   document.body.classList.add('con-mapa');
   estado.foco = i; estado.abiertos.clear();
   if (historial[historial.length - 1] !== i) historial.push(i);
-  document.title = `${N[i].n} · SQL Map`;
+  document.title = `${N[i].n} · SQL-Lens`;
   quitarResaltado();
   dibujar(true);
   pintarPanel();
@@ -780,7 +780,7 @@ function leerDireccion() {
   estado.foco = null;
   $('cuerpo').hidden = true; $('inicio').hidden = false;
   document.body.classList.remove('con-mapa');
-  document.title = 'SQL Map';
+  document.title = 'SQL-Lens';
   pintarInicio();
 }
 window.addEventListener('hashchange', leerDireccion);

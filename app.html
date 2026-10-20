@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL-Lens</title>
+<!-- El logo con fondo blanco redondo: es el icono de la ventana y de la barra de tareas. -->
+<link rel="icon" type="image/png" sizes="256x256" href="/icon-256.png">
+<link rel="icon" href="/favicon.ico" sizes="16x16 24x24 32x32 48x48 64x64 256x256">
+<script>
+  // Tema elegido (claro u oscuro) antes de pintar, para que no parpadee. Sin elegir, el del sistema.
+  try { const t = localStorage.getItem('sql-lens-tema'); if (t) document.documentElement.dataset.theme = t; } catch (e) { }
+</script>
+<style>
+:root {
+  --bg: #f4f5f8; --panel: #ffffff; --panel2: #f8f9fb; --text: #1b2130; --muted: #5f6879;
+  --faint: #99a0ae; --line: #e0e3e9; --hover: #eef1f6; --accent: #2b6cb7; --accent-soft: #e6eef9;
+  --ok: #1d7a3a; --ok-soft: #e6f6ea; --bad: #c0352b; --bad-soft: #fdeaea;
+  --sombra: 0 1px 2px rgba(20,30,50,.06), 0 2px 8px rgba(20,30,50,.05);
+  --mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11141a; --panel: #191d25; --panel2: #1e232d; --text: #e5e8ee; --muted: #9ba3b4;
+    --faint: #687084; --line: #2a303c; --hover: #232935; --accent: #6aa2e8; --accent-soft: #1d2b42;
+    --ok: #6fd394; --ok-soft: #15301f; --bad: #f59a9a; --bad-soft: #3a1818;
+    --sombra: 0 1px 2px rgba(0,0,0,.3), 0 2px 8px rgba(0,0,0,.25);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11141a; --panel: #191d25; --panel2: #1e232d; --text: #e5e8ee; --muted: #9ba3b4;
+  --faint: #687084; --line: #2a303c; --hover: #232935; --accent: #6aa2e8; --accent-soft: #1d2b42;
+  --ok: #6fd394; --ok-soft: #15301f; --bad: #f59a9a; --bad-soft: #3a1818;
+  --sombra: 0 1px 2px rgba(0,0,0,.3), 0 2px 8px rgba(0,0,0,.25);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  display: flex; flex-direction: column; overflow: hidden; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: .55; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- barra ---------- */
+.barra { display: flex; align-items: center; gap: 24px; padding: 0 20px; height: 54px; flex: none;
+  background: var(--panel); border-bottom: 1px solid var(--line); }
+.marca { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 15px; color: var(--text); }
+.marca svg { width: 26px; height: 26px; color: var(--accent); }
+.pestanas { display: flex; height: 100%; gap: 4px; }
+.pestanas button { border: 0; background: none; padding: 0 14px; color: var(--muted); font-weight: 600;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.pestanas button:hover { color: var(--text); }
+.pestanas button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+
+/* ---------- claro / oscuro ---------- */
+.tema { margin-left: auto; display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel2); }
+.tema button { display: grid; place-items: center; width: 30px; height: 26px; border: 0; border-radius: 999px;
+  background: none; color: var(--muted); }
+.tema button:hover { color: var(--text); }
+.tema button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.tema svg { width: 16px; height: 16px; }
+
+/* ---------- controles ---------- */
+.boton { border: 1px solid var(--line); background: var(--panel); border-radius: 7px; padding: 7px 14px; min-height: 36px; white-space: nowrap; }
+.boton:hover:not(:disabled) { background: var(--hover); }
+.boton.primario { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.boton.primario:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
+.campo { display: grid; gap: 5px; }
+.campo label { font-weight: 600; font-size: 13px; }
+.campo small { color: var(--muted); font-size: 12.5px; }
+input[type="text"], select { width: 100%; padding: 8px 11px; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--panel2); min-height: 38px; }
+input[type="text"]:focus, select:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+
+.vista { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+/* ---------- extraer ---------- */
+.extraer { flex: 1; overflow: auto; padding: 36px 24px 48px; }
+.tarjeta { max-width: 720px; margin: 0 auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: var(--sombra); padding: 24px; display: grid; gap: 18px; }
+.tarjeta h1 { font-size: 19px; margin: 0; }
+.tarjeta > p { margin: -10px 0 0; color: var(--muted); }
+.fila-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.acciones { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.registro { margin: 0; max-height: 280px; overflow: auto; padding: 12px 14px; border-radius: 8px; background: var(--panel2);
+  border: 1px solid var(--line); font: 12.5px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; }
+.estado { display: flex; gap: 10px; align-items: flex-start; padding: 11px 14px; border-radius: 8px; font-size: 14px; }
+.estado.ok { background: var(--ok-soft); color: var(--ok); }
+.estado.mal { background: var(--bad-soft); color: var(--bad); }
+.estado.curso { background: var(--accent-soft); color: var(--accent); }
+.estado b { color: inherit; }
+.estado .mono { font-family: var(--mono); font-size: 13px; word-break: break-all; }
+.nota-carpeta { max-width: 720px; margin: 16px auto 0; color: var(--muted); font-size: 13.5px; display: flex; gap: 10px;
+  align-items: center; flex-wrap: wrap; }
+.enlace { border: 0; background: none; color: var(--accent); padding: 0; font-weight: 600; }
+.enlace:hover { text-decoration: underline; }
+
+/* ---------- mapa y comparación ---------- */
+.herramientas { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; padding: 12px 20px; flex: none;
+  background: var(--panel); border-bottom: 1px solid var(--line); }
+.herramientas .campo { min-width: 260px; flex: 0 1 420px; }
+.herramientas .derecha { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.guardado { color: var(--ok); font-size: 13px; }
+.lienzo { position: relative; flex: 1; min-height: 0; }
+.lienzo iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--bg); }
+.vacio, .cargando { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--muted);
+  padding: 24px; background: var(--bg); }
+.vacio b { display: block; color: var(--text); font-size: 16px; margin-bottom: 4px; }
+.giro { width: 26px; height: 26px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%;
+  animation: giro .8s linear infinite; margin: 0 auto 12px; }
+@keyframes giro { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .giro { animation-duration: 3s; } }
+
+@media (max-width: 760px) {
+  .barra { gap: 12px; padding: 0 12px; }
+  .marca span { display: none; }
+  .fila-campos { grid-template-columns: 1fr; }
+  .herramientas .campo { flex-basis: 100%; }
+  .herramientas .derecha { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+<header class="barra">
+  <div class="marca">
+    <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M50 17 L89 36 L50 55 L11 36 Z"/><path d="M11 50 L50 69 L89 50"/><path d="M11 64 L50 83 L89 64"/>
+    </svg>
+    <span>SQL-Lens</span>
+  </div>
+  <nav class="pestanas" role="tablist">
+    <button role="tab" id="tab-extract" data-vista="extract" aria-selected="true">Extract</button>
+    <button role="tab" id="tab-map" data-vista="map" aria-selected="false">Map</button>
+    <button role="tab" id="tab-compare" data-vista="compare" aria-selected="false">Compare</button>
+  </nav>
+  <div class="tema" role="group" aria-label="Theme">
+    <button type="button" data-tema="light" title="Light" aria-label="Light theme">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+      </svg>
+    </button>
+    <button type="button" data-tema="dark" title="Dark" aria-label="Dark theme">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<!-- ======================= EXTRACT ======================= -->
+<section class="vista" id="vista-extract">
+  <div class="extraer">
+    <form class="tarjeta" id="formExtraer" autocomplete="off">
+      <h1>Extract Database</h1>
+      <p>It never reads table data or changes anything.</p>
+      <div class="fila-campos">
+        <div class="campo">
+          <label for="servidor">Server</label>
+          <input type="text" id="servidor" value="localhost" spellcheck="false" required>
+          <small>On the database VM (<b>localhost</b>). Or server\instance.</small>
+        </div>
+        <div class="campo">
+          <label for="bases">Database</label>
+          <input type="text" id="bases" placeholder="MESDB" spellcheck="false" required>
+          <small>Separated by commas.</small>
+        </div>
+      </div>
+      <div class="acciones">
+        <button class="boton primario" id="botonExtraer" type="submit">Extract</button>
+        <!-- <span class="campo"><small>Signs in with your Windows user.</small></span> -->
+      </div>
+      <div id="estadoExtraer" hidden></div>
+      <pre class="registro" id="registro" hidden></pre>
+    </form>
+    <div class="nota-carpeta">
+      <span>If extracted on another server with <code>extraer.ps1</code>:</span>
+      <span> Copy its <code>.json</code> into the extractions folder and it appears in Map and Compare.</span>
+      <button class="enlace" type="button" data-carpeta="extractions">Open extractions folder</button>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= MAP ======================= -->
+<section class="vista" id="vista-map" hidden>
+  <div class="herramientas">
+    <div class="campo">
+      <label for="selMapa">Extraction</label>
+      <select id="selMapa"></select>
+    </div>
+    <button class="boton primario" id="botonMapa" type="button">Open map</button>
+    <div class="derecha">
+      <span class="guardado" id="guardadoMapa"></span>
+      <button class="boton" id="guardarMapa" type="button" disabled title="Save the map as a single .html file to share it">Save as HTML</button>
+    </div>
+  </div>
+  <div class="lienzo">
+    <iframe id="marcoMapa" title="Dependency map" hidden></iframe>
+    <div class="vacio" id="vacioMapa"><div><b>Choose an extraction and open its map</b>Search for any object to see what depends on it.</div></div>
+    <div class="cargando" id="cargandoMapa" hidden><div><div class="giro"></div>Building the map… a few seconds.</div></div>
+  </div>
+</section>
+
+<!-- ======================= COMPARE ======================= -->
+<section class="vista" id="vista-compare" hidden>
+  <div class="herramientas">
+    <div class="campo">
+      <label for="selA">A</label>
+      <select id="selA"></select>
+    </div>
+    <div class="campo">
+      <label for="selB">B</label>
+      <select id="selB"></select>
+    </div>
+    <button class="boton primario" id="botonComparar" type="button">Compare</button>
+    <div class="derecha">
+      <span class="guardado" id="guardadoComp"></span>
+      <button class="boton" id="guardarComp" type="button" disabled title="Save the comparison as a single .html file to share it">Save as HTML</button>
+    </div>
+  </div>
+  <div class="lienzo">
+    <iframe id="marcoComp" title="Comparison" hidden></iframe>
+    <div class="vacio" id="vacioComp"><div><b>Choose two extractions and compare them</b>What exists only in A, only in B, and what changed.</div></div>
+    <div class="cargando" id="cargandoComp" hidden><div><div class="giro"></div>Comparing…</div></div>
+  </div>
+</section>
+
+<script>
+'use strict';
+const TOKEN = new URLSearchParams(location.search).get('t') || '';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const conToken = ruta => ruta + (ruta.includes('?') ? '&' : '?') + 't=' + encodeURIComponent(TOKEN);
+
+async function api(ruta, cuerpo) {
+  const opciones = cuerpo === undefined ? {} : {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Token': TOKEN }, body: JSON.stringify(cuerpo),
+  };
+  const r = await fetch(conToken(ruta), opciones);
+  const datos = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(datos.error || `Error ${r.status}`);
+  return datos;
+}
+function recordar(clave, valor) { try { localStorage.setItem('sql-lens-' + clave, valor); } catch (e) { } }
+function recuerdo(clave) { try { return localStorage.getItem('sql-lens-' + clave); } catch (e) { return null; } }
+
+// ---------- latido: la app se cierra sola poco después de cerrar la ventana ----------
+setInterval(() => fetch(conToken('/api/ping')).catch(() => { }), 4000);
+fetch(conToken('/api/ping')).catch(() => { });
+addEventListener('pagehide', () => navigator.sendBeacon(conToken('/api/bye')));
+
+// ---------- pestañas ----------
+function irA(vista) {
+  for (const b of document.querySelectorAll('.pestanas button')) b.setAttribute('aria-selected', b.dataset.vista === vista);
+  for (const v of ['extract', 'map', 'compare']) $('vista-' + v).hidden = v !== vista;
+  if (vista !== 'extract') cargarLista();
+  recordar('vista', vista);
+}
+document.querySelector('.pestanas').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (b) irA(b.dataset.vista);
+});
+
+// ---------- extracciones disponibles ----------
+let extracciones = [];
+const fecha = s => { const d = new Date(s * 1000); return d.toLocaleDateString('en-CA') + ' ' + d.toTimeString().slice(0, 5); };
+function opciones(sel, elegida) {
+  if (!extracciones.length) {
+    sel.innerHTML = '<option value="">No extractions yet: use the Extract tab</option>';
+    return;
+  }
+  sel.innerHTML = extracciones.map(x =>
+    `<option value="${esc(x.name)}">${esc(x.name.replace(/\.json$/i, ''))}  ·  ${fecha(x.modified)}  ·  ${(x.size / 1048576).toFixed(1)} MB</option>`).join('');
+  if (elegida && extracciones.some(x => x.name === elegida)) sel.value = elegida;
+}
+async function cargarLista(nueva) {
+  try {
+    const datos = await api('/api/extractions');
+    extracciones = datos.items;
+  } catch (e) { extracciones = []; }
+  opciones($('selMapa'), nueva || $('selMapa').value || recuerdo('mapa'));
+  opciones($('selA'), $('selA').value || recuerdo('a'));
+  opciones($('selB'), $('selB').value || recuerdo('b') || extracciones[1]?.name);
+  const vacio = !extracciones.length;
+  $('botonMapa').disabled = vacio;
+  $('botonComparar').disabled = extracciones.length < 2;
+}
+
+// ---------- extraer ----------
+$('servidor').value = recuerdo('servidor') || 'localhost';
+$('bases').value = recuerdo('bases') || '';
+let extraida = null;
+
+function estado(clase, html) {
+  const e = $('estadoExtraer');
+  e.className = 'estado ' + clase; e.innerHTML = html; e.hidden = false;
+}
+$('formExtraer').addEventListener('submit', async e => {
+  e.preventDefault();
+  const servidor = $('servidor').value.trim(), bases = $('bases').value.trim();
+  if (!servidor || !bases) return;
+  recordar('servidor', servidor); recordar('bases', bases);
+  $('botonExtraer').disabled = true;
+  $('registro').textContent = ''; $('registro').hidden = false;
+  estado('curso', `Extracting <b>${esc(bases)}</b> from <b>${esc(servidor)}</b>… a large database takes a few minutes.`);
+  try {
+    const { id } = await api('/api/extract', { server: servidor, databases: bases });
+    let desde = 0;
+    while (true) {
+      await new Promise(r => setTimeout(r, 700));
+      const t = await api(`/api/job?id=${id}&from=${desde}`);
+      desde = t.next;
+      if (t.lines.length) {
+        $('registro').textContent += t.lines.join('\n') + '\n';
+        $('registro').scrollTop = $('registro').scrollHeight;
+      }
+      if (t.state === 'done') {
+        extraida = t.file;
+        estado('ok', `<div>Saved <span class="mono">${esc(t.file)}</span> in the extractions folder.
+          <div class="acciones" style="margin-top:10px"><button class="boton primario" type="button" id="abrirExtraida">Open its map</button>
+          <button class="boton" type="button" data-carpeta="extractions">Open folder</button></div></div>`);
+        cargarLista(t.file);
+        break;
+      }
+      if (t.state === 'error') {
+        estado('mal', '<div><b>The extraction failed.</b> The reason is in the last lines below.</div>');
+        break;
+      }
+    }
+  } catch (err) {
+    estado('mal', `<div><b>Could not extract.</b> ${esc(err.message)}</div>`);
+  } finally {
+    $('botonExtraer').disabled = false;
+  }
+});
+document.addEventListener('click', async e => {
+  if (e.target.id === 'abrirExtraida' && extraida) {
+    irA('map'); await cargarLista(extraida); $('selMapa').value = extraida; abrirMapa();
+  }
+  const c = e.target.closest('[data-carpeta]');
+  if (c) api('/api/open-folder', { which: c.dataset.carpeta }).catch(err => alert(err.message));
+});
+
+// ---------- ver dentro de la ventana ----------
+function mostrar(marco, vacio, cargando, url, alTerminar) {
+  vacio.hidden = true; cargando.hidden = false;
+  marco.hidden = false;
+  marco.onload = () => { temaEnMarco(marco); cargando.hidden = true; alTerminar(); };
+  marco.src = conToken(url);
+}
+
+// ---------- claro / oscuro: la ventana y lo que se ve dentro (mapa y comparación) ----------
+const oscuroDelSistema = matchMedia('(prefers-color-scheme: dark)');
+const temaActual = () => recuerdo('tema') || (oscuroDelSistema.matches ? 'dark' : 'light');
+function temaEnMarco(marco) {
+  try { marco.contentDocument.documentElement.dataset.theme = temaActual(); } catch (e) { }
+}
+function ponerTema() {
+  const tema = temaActual();
+  document.documentElement.dataset.theme = tema;
+  for (const b of document.querySelectorAll('.tema button')) b.setAttribute('aria-pressed', b.dataset.tema === tema);
+  for (const marco of document.querySelectorAll('iframe')) temaEnMarco(marco);
+}
+document.querySelector('.tema').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  recordar('tema', b.dataset.tema);
+  ponerTema();
+});
+oscuroDelSistema.addEventListener('change', ponerTema);
+ponerTema();
+
+// ---------- mapa ----------
+function abrirMapa() {
+  const f = $('selMapa').value; if (!f) return;
+  recordar('mapa', f);
+  $('guardarMapa').disabled = true; $('guardadoMapa').textContent = '';
+  mostrar($('marcoMapa'), $('vacioMapa'), $('cargandoMapa'), `/view/map?file=${encodeURIComponent(f)}`,
+    () => { $('guardarMapa').disabled = false; });
+}
+$('botonMapa').addEventListener('click', abrirMapa);
+$('guardarMapa').addEventListener('click', async () => {
+  try {
+    const r = await api('/api/save', { kind: 'map', file: $('selMapa').value });
+    $('guardadoMapa').innerHTML = `Saved in maps/ · <button class="enlace" type="button" data-carpeta="maps">Open folder</button>`;
+  } catch (err) { $('guardadoMapa').textContent = err.message; }
+});
+
+// ---------- comparar ----------
+function abrirComparacion() {
+  const a = $('selA').value, b = $('selB').value;
+  if (!a || !b) return;
+  if (a === b) { $('guardadoComp').textContent = 'Choose two different extractions.'; return; }
+  recordar('a', a); recordar('b', b);
+  $('guardarComp').disabled = true; $('guardadoComp').textContent = '';
+  mostrar($('marcoComp'), $('vacioComp'), $('cargandoComp'),
+    `/view/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`, () => { $('guardarComp').disabled = false; });
+}
+$('botonComparar').addEventListener('click', abrirComparacion);
+$('guardarComp').addEventListener('click', async () => {
+  try {
+    await api('/api/save', { kind: 'compare', a: $('selA').value, b: $('selB').value });
+    $('guardadoComp').innerHTML = `Saved in comparisons/ · <button class="enlace" type="button" data-carpeta="comparisons">Open folder</button>`;
+  } catch (err) { $('guardadoComp').textContent = err.message; }
+});
+
+cargarLista().then(() => irA(recuerdo('vista') || 'extract'));
+</script>
+</body>
+</html>

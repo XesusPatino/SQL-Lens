@@ -10,10 +10,10 @@
     and the jobs in msdb): it never reads table data or writes anything.
 
     Then, on a machine with Python:
-        python extraer.py --from extraction_....json
+        python map.py --from extraction_....json
         python comparar.py extraction_A.json extraction_B.json
 
-    The queries are the same as in extraer.py: if you change one, change both.
+    The queries are the same as in map.py: if you change one, change both.
     The .json contains the code of every procedure: treat it accordingly.
 
 .EXAMPLE
@@ -153,7 +153,7 @@ function Quote-Name([string]$name) { return '[' + $name.Replace(']', ']]') + ']'
 # ---------------------------------------------------------------------------
 if ($MyInvocation.InvocationName -eq '.') { return }   # dot-sourced: functions only
 
-$connectionString = "Server=$Server;Database=master;Application Name=SQL Map (read only);ApplicationIntent=ReadOnly;Connect Timeout=30"
+$connectionString = "Server=$Server;Database=master;Application Name=SQL-Lens (read only);ApplicationIntent=ReadOnly;Connect Timeout=30"
 if ($User) {
     $password = Read-Host "Password for $User" -AsSecureString
     $password.MakeReadOnly()
@@ -253,4 +253,4 @@ try {
 foreach ($a in $warnings) { Write-Host "WARNING: $a" -ForegroundColor Yellow }
 $mb = (Get-Item $path).Length / 1MB
 Write-Host ("`nDone in {0:N0} s: {1} ({2:N1} MB)" -f ((Get-Date) - $start).TotalSeconds, $path, $mb) -ForegroundColor Green
-Write-Host "Copy it to a machine with Python and run:  python extraer.py --from $(Split-Path $path -Leaf)"
+Write-Host "Copy it to a machine with Python and run:  python map.py --from $(Split-Path $path -Leaf)"

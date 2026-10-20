@@ -14,7 +14,7 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-from extraer import COMPARACIONES, NOMBRES_TIPO, buscar_extraccion, en_carpeta, escribir_html
+from map import COMPARACIONES, NOMBRES_TIPO, buscar_extraccion, en_carpeta, escribir_html
 from grafo import TIPO_OBJETO
 
 TIPOS = ['TABLA', 'VISTA', 'PROC', 'FUNCION', 'TRIGGER', 'SINONIMO', 'SECUENCIA', 'JOB']
@@ -142,6 +142,30 @@ def comparar(a, b):
     return resumen, filas
 
 
+def preparar(ruta_a, ruta_b, db_a=None, db_b=None):
+    """Los datos del informe (los que lleva dentro comparar.html) y las dos extracciones leídas."""
+    a, b = cargar(ruta_a, db_a), cargar(ruta_b, db_b)
+    resumen, filas = comparar(a, b)
+    avisos = []
+    for x in (a, b):
+        if not x['conColumnas']:
+            avisos.append(f"{x['etiqueta']} ({x['fecha']}) was extracted without table columns: tables are only "
+                          'compared by name. Extract it again with the current extraer.ps1 / map.py.')
+    if a['conJobs'] != b['conJobs']:
+        avisos.append('Only one of the two extractions has SQL Agent jobs: the job comparison is not meaningful.')
+    datos = {
+        'a': {'etiqueta': a['etiqueta'], 'fecha': a['fecha']},
+        'b': {'etiqueta': b['etiqueta'], 'fecha': b['fecha']},
+        'tipos': TIPOS, 'resumen': resumen, 'filas': filas, 'avisos': avisos,
+    }
+    return datos, a, b
+
+
+def nombre_comparacion(a, b):
+    texto = f"compare_{a['etiqueta']}_vs_{b['etiqueta']}_{datetime.now():%Y%m%d}"
+    return Path(re.sub(r'[^\w.-]+', '-', texto) + '.html')
+
+
 def main():
     p = argparse.ArgumentParser(description='Compares two extractions and writes an HTML report.')
     p.add_argument('a', type=Path, metavar='A.json', help='First extraction (e.g. DEV)')
@@ -151,22 +175,9 @@ def main():
     p.add_argument('--output', type=Path, metavar='FILE.html', help='Output .html file')
     args = p.parse_args()
 
-    a, b = cargar(buscar_extraccion(args.a), args.db_a), cargar(buscar_extraccion(args.b), args.db_b)
-    resumen, filas = comparar(a, b)
-    avisos = []
-    for x in (a, b):
-        if not x['conColumnas']:
-            avisos.append(f"{x['etiqueta']} ({x['fecha']}) was extracted without table columns: tables are only "
-                          'compared by name. Extract it again with the current extraer.ps1 / extraer.py.')
-    if a['conJobs'] != b['conJobs']:
-        avisos.append('Only one of the two extractions has SQL Agent jobs: the job comparison is not meaningful.')
-    datos = {
-        'a': {'etiqueta': a['etiqueta'], 'fecha': a['fecha']},
-        'b': {'etiqueta': b['etiqueta'], 'fecha': b['fecha']},
-        'tipos': TIPOS, 'resumen': resumen, 'filas': filas, 'avisos': avisos,
-    }
-    salida = en_carpeta(args.output or Path(re.sub(r'[^\w.-]+', '-', f"compare_{a['etiqueta']}_vs_{b['etiqueta']}_{datetime.now():%Y%m%d}") + '.html'),
-                        COMPARACIONES)
+    datos, a, b = preparar(buscar_extraccion(args.a), buscar_extraccion(args.b), args.db_a, args.db_b)
+    resumen, avisos = datos['resumen'], datos['avisos']
+    salida = en_carpeta(args.output or nombre_comparacion(a, b), COMPARACIONES)
     escribir_html(datos, salida, plantilla='comparar.html')
 
     print(f"A: {a['etiqueta']} ({a['fecha']})\nB: {b['etiqueta']} ({b['fecha']})\n")

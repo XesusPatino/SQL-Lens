@@ -68,7 +68,7 @@ class _Constructor:
         self.analisis = {}      # clave -> Analisis
         self.avisos = list(ex.get('avisos', ()))
 
-    # ---- nodos ---------------------------------------------------------------
+    # NODOS:
 
     def cargar_objetos(self):
         for base, d in self.ex['bases'].items():

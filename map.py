@@ -39,7 +39,7 @@ CONSULTAS = {
     'sinonimos': """
         SELECT s.object_id, s.base_object_name
         FROM {bd}.sys.synonyms s""",
-    # Table columns: only used by comparar.py, to tell whether a table changed.
+    # Table columns: solo usado por el comparar.py, para ver que tabla cambió.
     'columnas': """
         SELECT c.object_id, c.column_id, c.name, t.name AS tipo, c.max_length,
                c.precision, c.scale, c.is_nullable, c.is_identity
@@ -48,7 +48,8 @@ CONSULTAS = {
         JOIN {bd}.sys.types t ON t.user_type_id = c.user_type_id
         WHERE o.type = 'U' AND o.is_ms_shipped = 0""",
 }
-# These can fail (permissions) without stopping the extraction.
+
+
 OPCIONALES = ('filas', 'sinonimos', 'columnas')
 
 SISTEMA = "SELECT DISTINCT name FROM sys.system_objects"
@@ -88,7 +89,7 @@ def conectar(args):
         sys.exit('pyodbc is missing:  pip install pyodbc')
     driver = elegir_driver(pyodbc, args.driver)
     partes = [f'DRIVER={{{driver}}}', f'SERVER={args.servidor}', 'DATABASE=master',
-              'APP=SQL Map (read only)', 'ApplicationIntent=ReadOnly']
+              'APP=SQL-Lens (read only)', 'ApplicationIntent=ReadOnly']
     if args.usuario:
         contrasena = args.contrasena or getpass.getpass(f'Password for {args.usuario}: ')
         partes += [f'UID={args.usuario}', f'PWD={{{contrasena.replace("}", "}}")}}}']
@@ -170,18 +171,24 @@ def extraer(args):
     return extraccion
 
 
-def escribir_html(datos, salida, plantilla='visor.html'):
-    nombre_plantilla = plantilla
-    plantilla = Path(__file__).with_name(nombre_plantilla).read_text(encoding='utf-8')
+def html_de(datos, plantilla='visor.html'):
+    """La plantilla con los datos dentro: un .html que funciona solo."""
+    texto = Path(__file__).with_name(plantilla).read_text(encoding='utf-8')
     # "<" escapado: el código de un procedimiento no puede cerrar el <script>.
     carga = json.dumps(datos, ensure_ascii=False, separators=(',', ':')).replace('<', '\\u003c')
-    if plantilla.count('__DATOS__') != 1:
-        sys.exit(f'{nombre_plantilla} is missing the __DATOS__ marker')
-    salida.write_text(plantilla.replace('__DATOS__', carga), encoding='utf-8')
+    if texto.count('__DATOS__') != 1:
+        sys.exit(f'{plantilla} is missing the __DATOS__ marker')
+    return texto.replace('__DATOS__', carga)
 
 
-# Cada cosa en su carpeta, junto a los scripts (no donde se ejecute el comando).
-CARPETA = Path(__file__).resolve().parent
+def escribir_html(datos, salida, plantilla='visor.html'):
+    salida.write_text(html_de(datos, plantilla), encoding='utf-8')
+
+
+# Cada cosa en su carpeta, junto a los scripts 
+# En el .exe, junto al ejecutable: __file__ apunta a la carpeta temporal donde se descomprime
+CARPETA = (Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False)
+           else Path(__file__).resolve().parent)
 EXTRACCIONES = CARPETA / 'extractions'
 MAPAS = CARPETA / 'maps'
 COMPARACIONES = CARPETA / 'comparisons'
@@ -218,7 +225,7 @@ NOMBRES_TIPO = {
 
 
 def main():
-    # The Spanish option names still work as aliases.
+    
     p = argparse.ArgumentParser(description='SQL Server dependency map (read only).')
     p.add_argument('--server', '--servidor', dest='servidor', metavar='SERVER', help=r'Server or server\instance')
     p.add_argument('--databases', '--bases', dest='bases', metavar='DATABASE', nargs='+', help='One or more databases')
@@ -245,7 +252,7 @@ def main():
               f'{extraccion["fecha"]}')
     else:
         extraccion = extraer(args)
-        # Same file extraer.ps1 writes: rebuilds the map without connecting, and feeds comparar.py.
+        # El extraer.ps1 escribe el .json: recrea el mapa sin necesidad de conectarse y alimenta a comparar.py.
         crudo = en_carpeta(Path(re.sub(r'[^\w.-]+', '-', f"extraction_{extraccion['servidor']}_"
                                        f"{'_'.join(extraccion['bases'])}_{datetime.now():%Y%m%d}") + '.json'),
                            EXTRACCIONES)

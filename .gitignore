@@ -1,0 +1,10 @@
+# Datos de las bases de datos:
+extractions/
+maps/
+comparisons/
+*.json
+
+# Se generan:
+*.exe
+*.log
+__pycache__/
