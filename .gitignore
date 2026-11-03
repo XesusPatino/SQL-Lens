@@ -1,4 +1,4 @@
-# Datos de las bases de datos:
+# Datos de las bases de datos (privados: llevan el código de los procedimientos):
 extractions/
 maps/
 comparisons/
@@ -8,3 +8,7 @@ comparisons/
 *.exe
 *.log
 __pycache__/
+*.pyc
+
+# Configuración local del editor:
+.vscode/
