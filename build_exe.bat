@@ -8,12 +8,10 @@ set "AQUI=%~dp0"
 set "TRABAJO=%TEMP%\sql-lens-build"
 
 python -m PyInstaller --noconfirm --clean --onefile --windowed --name "SQL-Lens" ^
-  --icon "%AQUI%icon.ico" ^
-  --add-data "%AQUI%app.html;." ^
-  --add-data "%AQUI%visor.html;." ^
-  --add-data "%AQUI%comparar.html;." ^
+  --icon "%AQUI%assets\icon.ico" ^
+  --add-data "%AQUI%templates;templates" ^
   --add-data "%AQUI%extraer.ps1;." ^
-  --add-data "%AQUI%icon.ico;." ^
+  --add-data "%AQUI%assets\icon.ico;assets" ^
   --distpath "%AQUI%." --workpath "%TRABAJO%" --specpath "%TRABAJO%" ^
   "%AQUI%app.py"
 

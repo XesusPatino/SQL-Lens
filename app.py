@@ -26,7 +26,7 @@ from urllib.parse import parse_qs, urlparse
 
 import comparar
 from map import CARPETA, COMPARACIONES, EXTRACCIONES, MAPAS, html_de, nombre_salida
-from grafo import construir
+from core.grafo import construir
 
 # Plantillas y extraer.ps1: junto al script o, en el .exe, en su carpeta temporal.
 RECURSOS = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
@@ -210,7 +210,7 @@ div{{max-width:560px;padding:24px;border-left:3px solid #d03b3b}}p{{color:var(--
 
 def icono_grande():
     """La imagen de 256 px que lleva dentro icon.ico (cada tamaño es un PNG)."""
-    datos = (RECURSOS / 'icon.ico').read_bytes()
+    datos = (RECURSOS / 'assets' / 'icon.ico').read_bytes()
     for i in range(int.from_bytes(datos[4:6], 'little')):
         entrada = datos[6 + 16 * i:22 + 16 * i]
         if entrada[0] == 0:   # en un .ico, ancho 0 significa 256
@@ -258,7 +258,7 @@ class Manejador(BaseHTTPRequestHandler):
         consulta = parse_qs(url.query)
         if url.path == '/favicon.ico':
             # El icono de la ventana: el navegador lo pide por su cuenta, sin la clave. Solo es una imagen.
-            return self._enviar(200, (RECURSOS / 'icon.ico').read_bytes(), 'image/x-icon')
+            return self._enviar(200, (RECURSOS / 'assets' / 'icon.ico').read_bytes(), 'image/x-icon')
         if url.path == '/icon-256.png':
             # El de 256 px para la barra de tareas: Edge lo reduce en vez de ampliar el de 16 (que se ve borroso).
             return self._enviar(200, icono_grande(), 'image/png')
@@ -267,7 +267,7 @@ class Manejador(BaseHTTPRequestHandler):
         arg = lambda k: consulta.get(k, [''])[0]   # noqa: E731
         try:
             if url.path == '/':
-                return self._enviar(200, (RECURSOS / 'app.html').read_text(encoding='utf-8'), 'text/html')
+                return self._enviar(200, (RECURSOS / 'templates' / 'app.html').read_text(encoding='utf-8'), 'text/html')
             if url.path == '/api/ping':
                 VIGIA.latido()
                 return self._json({'ok': True})

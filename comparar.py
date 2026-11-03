@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from map import COMPARACIONES, NOMBRES_TIPO, buscar_extraccion, en_carpeta, escribir_html
-from grafo import TIPO_OBJETO
+from core.grafo import TIPO_OBJETO
 
 TIPOS = ['TABLA', 'VISTA', 'PROC', 'FUNCION', 'TRIGGER', 'SINONIMO', 'SECUENCIA', 'JOB']
 MAX_LINEAS_DIFF = 1500

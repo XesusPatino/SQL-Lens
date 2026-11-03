@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from grafo import construir
+from core.grafo import construir
 
 CONSULTAS = {
     'objetos': """
@@ -173,7 +173,7 @@ def extraer(args):
 
 def html_de(datos, plantilla='visor.html'):
     """La plantilla con los datos dentro: un .html que funciona solo."""
-    texto = Path(__file__).with_name(plantilla).read_text(encoding='utf-8')
+    texto = (Path(__file__).parent / 'templates' / plantilla).read_text(encoding='utf-8')
     # "<" escapado: el código de un procedimiento no puede cerrar el <script>.
     carga = json.dumps(datos, ensure_ascii=False, separators=(',', ':')).replace('<', '\\u003c')
     if texto.count('__DATOS__') != 1:

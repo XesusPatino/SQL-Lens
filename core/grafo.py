@@ -4,7 +4,7 @@ Construcción del grafo.
 
 from collections import defaultdict
 
-from analisis import analizar_modulo, partir_nombre, referencias_en_texto
+from .analisis import analizar_modulo, partir_nombre, referencias_en_texto
 
 TIPO_OBJETO = {
     'U': 'TABLA', 'ET': 'TABLA', 'V': 'VISTA',

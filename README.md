@@ -74,7 +74,7 @@ pip install pyinstaller pillow pywebview
 .\build_exe.bat
 ```
  
-It writes `SQL-Lens.exe` with the icon (`icon.ico`), the screens and `extraer.ps1` inside. Copy just the `.exe` to any machine: it creates its `extractions/` folder next to itself.
+It writes `SQL-Lens.exe` with the icon (`assets/icon.ico`), the screens and `extraer.ps1` inside. Copy just the `.exe` to any machine: it creates its `extractions/` folder next to itself.
  
 </details>
 
