@@ -2,9 +2,11 @@
 Construcción del grafo.
 """
 
+import re
 from collections import defaultdict
 
 from .analisis import analizar_modulo, partir_nombre, referencias_en_texto
+from .web import COMUNES, analizar_css, analizar_js, es_nombre_lookup
 
 TIPO_OBJETO = {
     'U': 'TABLA', 'ET': 'TABLA', 'V': 'VISTA',
@@ -21,6 +23,8 @@ TIPOS_ARISTA = ['lee', 'escribe', 'ejecuta', 'usa', 'dispara', 'sinonimo']
 _FUERZA = {'lee': 0, 'escribe': 1}
 _BASES_IGNORADAS = {'tempdb'}
 _PSEUDOTABLAS = {'inserted', 'deleted'}
+# Una cadena de un .js que puede ser el nombre de un objeto: "sp_X", "dbo.sp_X", "[dbo].[sp_X]".
+_NOMBRE_SUELTO = re.compile(r'^[A-Za-z_\[][\w$#@\[\].]{1,255}$')
 
 
 def _fecha(valor):
@@ -263,6 +267,91 @@ class _Constructor:
             for destino, accion in aristas:
                 self.g.arista(clave, destino, self._tipo_texto(accion, destino))
 
+    def _objeto_web(self, bd, esquema, nombre, suelto=False, crear=False):
+        """
+        Un objeto de las bases nombrado desde un .js. La de MES
+        primero: es la de MESDirectAccess. "suelto" = una cadena que solo es un nombre: vale una
+        SP, vista o función; una tabla, solo con esquema (hay tablas job, item, line... palabras
+        que salen en cualquier .js).
+        """
+        for base in self.bases_web:
+            destino = self.resolver(base, None, bd, esquema, nombre, crear=False)
+            if destino:
+                td = self.g.nodos[destino]['t']
+                if not suelto or td in ('PROC', 'VISTA', 'FUNCION') or (esquema and td == 'TABLA'):
+                    return destino
+        return self.resolver(self.bases_web[0], None, bd, esquema, nombre) if crear else None
+
+    def cargar_web(self):
+        """Los .js y .css de los formularios: qué procedimientos, lookups y otros ficheros usan."""
+        ficheros = self.ex.get('web') or ()
+        if not ficheros:
+            return
+        self.bases_web = sorted(self.ex['bases'], key=lambda b: b.lower() != 'mesdb')
+        sueltos = {n['n'].lower() for n in self.g.nodos.values() if n['t'] in ('PROC', 'VISTA', 'FUNCION')}
+        tablas = {n['n'].lower() for n in self.g.nodos.values() if n['t'] == 'TABLA'}
+        analisis, por_nombre, definidas = {}, defaultdict(list), defaultdict(set)
+        for f in ficheros:
+            ruta = f['ruta'].replace('\\', '/')
+            carpeta, _, nombre = ruta.rpartition('/')
+            tipo = 'CSS' if nombre.lower().endswith('.css') else 'JS'
+            clave = f'web:{ruta.lower()}'
+            codigo = f.get('codigo') or ''
+            nodo = self.g.nodo(clave, b='Web', e=carpeta, n=nombre, t=tipo, m=_fecha(f.get('fecha')),
+                               l=codigo.count('\n') + 1)
+            if self.incluir_codigo:
+                nodo['s'] = codigo
+            a = analisis[clave] = analizar_css(codigo) if tipo == 'CSS' else analizar_js(codigo)
+            if a.dinamico:
+                nodo['d'] = 1
+            por_nombre[nombre.lower()].append(clave)
+            for d in a.definiciones:
+                definidas[d].add(clave)
+
+        for origen, a in analisis.items():
+            # La SP de cada *DirectAccess: si no existe, sale como referencia rota.
+            for texto in a.directos:
+                srv, bd, esq, nombre = partir_nombre(texto)
+                destino = None if srv or not _NOMBRE_SUELTO.match(texto) else \
+                    self._objeto_web(bd, esq, nombre, crear=True)
+                if destino:
+                    td = self.g.nodos[destino]['t']
+                    self.g.arista(origen, destino, 'ejecuta' if td in ('PROC', 'NO_EXISTE')
+                                  else self._tipo_texto('lee', destino))
+            # Cualquier otra cadena que sea un nombre: de un lookup o de una SP, vista o función
+            # (spName = x ? "sp_A" : "sp_B").
+            for texto in a.literales:
+                if es_nombre_lookup(texto):
+                    a.lookups.add(texto)
+                    continue
+                if not _NOMBRE_SUELTO.match(texto):
+                    continue
+                srv, bd, esq, nombre = partir_nombre(texto)
+                if not srv and nombre and (nombre.lower() in sueltos or esq and nombre.lower() in tablas):
+                    destino = self._objeto_web(bd, esq, nombre, suelto=True)
+                    if destino:
+                        self.g.arista(origen, destino, self._tipo_texto('lee', destino))
+            for sql in a.sql:
+                for (srv, bd, esq, nombre), accion in referencias_en_texto(sql).items():
+                    destino = None if srv else self._objeto_web(bd, esq, nombre)
+                    if destino:
+                        self.g.arista(origen, destino, self._tipo_texto(accion, destino))
+            for nombre in a.lookups:
+                clave = f'lookup:{nombre.lower()}'
+                if clave not in self.g.nodos:
+                    self.g.nodo(clave, b='Work Tasks', e='lookup', n=nombre, t='LOOKUP')
+                self.g.arista(origen, clave, 'usa')
+            for nombre in a.ficheros:
+                destinos = por_nombre.get(nombre, ())
+                for destino in destinos:
+                    self.g.arista(origen, destino, 'usa', posible=len(destinos) > 1)
+            # Funciones de otro fichero: solo si se definen en uno (o en muy pocos, como "posible").
+            for nombre in a.llamadas - a.definiciones:
+                donde = definidas.get(nombre)
+                if donde and len(donde) <= 3 and len(nombre) > 2 and nombre not in COMUNES:
+                    for destino in donde:
+                        self.g.arista(origen, destino, 'usa', posible=len(donde) > 1)
+
     def resultado(self):
         claves = sorted(self.g.nodos)
         indice = {k: i for i, k in enumerate(claves)}
@@ -292,7 +381,7 @@ def construir(extraccion, incluir_codigo=True):
     extraccion = {
       'servidor': str, 'fecha': str, 'sistema': [nombres de objetos del sistema],
       'bases': {nombre: {'objetos', 'modulos', 'filas', 'dependencias', 'sinonimos'}},
-      'jobs': [pasos], 'avisos': [str],
+      'jobs': [pasos], 'web': [{'ruta', 'fecha', 'codigo'}], 'avisos': [str],
     }
     """
     c = _Constructor(extraccion, incluir_codigo)
@@ -301,4 +390,5 @@ def construir(extraccion, incluir_codigo=True):
     c.cargar_sinonimos()
     c.cargar_sql_dinamico()
     c.cargar_jobs()
+    c.cargar_web()
     return c.resultado()

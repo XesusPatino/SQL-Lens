@@ -13,6 +13,7 @@
   --c-TABLA: #2f6fdb; --c-VISTA: #0c93a3; --c-PROC: #7b4cd0; --c-FUNCION: #2a9555;
   --c-TRIGGER: #c9711a; --c-SINONIMO: #6c778a; --c-SECUENCIA: #6c778a; --c-JOB: #cf3f78;
   --c-EXTERNO: #7f889b; --c-NO_EXISTE: #d03b3b;
+  --c-JS: #a07c00; --c-CSS: #8a6a5c; --c-LOOKUP: #6f8a12;
   --mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, monospace;
   color-scheme: light;
 }
@@ -25,6 +26,7 @@
     --c-TABLA: #5d95f5; --c-VISTA: #2dbccb; --c-PROC: #a584f2; --c-FUNCION: #4cc27d;
     --c-TRIGGER: #eaa04c; --c-SINONIMO: #97a1b3; --c-SECUENCIA: #97a1b3; --c-JOB: #f0699f;
     --c-EXTERNO: #8f98aa; --c-NO_EXISTE: #f26666;
+    --c-JS: #e0bc3c; --c-CSS: #c09a8a; --c-LOOKUP: #a9c84a;
     color-scheme: dark;
   }
 }
@@ -36,6 +38,7 @@
   --c-TABLA: #5d95f5; --c-VISTA: #2dbccb; --c-PROC: #a584f2; --c-FUNCION: #4cc27d;
   --c-TRIGGER: #eaa04c; --c-SINONIMO: #97a1b3; --c-SECUENCIA: #97a1b3; --c-JOB: #f0699f;
   --c-EXTERNO: #8f98aa; --c-NO_EXISTE: #f26666;
+  --c-JS: #e0bc3c; --c-CSS: #c09a8a; --c-LOOKUP: #a9c84a;
   color-scheme: dark;
 }
 
@@ -47,7 +50,7 @@ body {
   font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   display: flex; flex-direction: column; overflow: hidden;
 }
-button, input { font: inherit; color: inherit; }
+button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 
 /* ---------- barra superior ---------- */
@@ -70,6 +73,11 @@ button { cursor: pointer; }
 #resultados .fila { border-radius: 6px; }
 #resultados .fila.activa { background: var(--accent-soft); }
 #resultados .nada { padding: 10px; color: var(--muted); }
+#filtroTipo {
+  border: 1px solid var(--line); background: var(--panel); border-radius: 7px;
+  padding: 6px 8px; min-height: 34px; max-width: 260px; cursor: pointer;
+}
+#filtroTipo.activo { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
 .origen { margin-left: auto; color: var(--faint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .boton {
   border: 1px solid var(--line); background: var(--panel); border-radius: 7px;
@@ -87,6 +95,7 @@ button { cursor: pointer; }
 .t-FUNCION { --c: var(--c-FUNCION); } .t-TRIGGER { --c: var(--c-TRIGGER); }
 .t-SINONIMO { --c: var(--c-SINONIMO); } .t-SECUENCIA { --c: var(--c-SECUENCIA); }
 .t-JOB { --c: var(--c-JOB); } .t-EXTERNO { --c: var(--c-EXTERNO); } .t-NO_EXISTE { --c: var(--c-NO_EXISTE); }
+.t-JS { --c: var(--c-JS); } .t-CSS { --c: var(--c-CSS); } .t-LOOKUP { --c: var(--c-LOOKUP); }
 
 /* ---------- mapa ---------- */
 .cuerpo { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 400px; min-height: 0; }
@@ -128,6 +137,7 @@ button { cursor: pointer; }
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 16%, transparent), var(--sombra); cursor: default;
 }
 .nodo.foco .nom { font-size: 13px; font-weight: 600; }
+.nodo.fuera { opacity: .3; }   /* de otro tipo que el del filtro: se queda para seguir el camino */
 .mas {
   position: absolute; width: 236px; height: 30px; display: flex; align-items: center; justify-content: center;
   border: 1px dashed var(--faint); border-radius: 6px; color: var(--muted); background: var(--panel2);
@@ -253,9 +263,10 @@ body.con-mapa .marca-agua { right: calc(400px + 18px); }
 <header class="barra">
   <button class="marca" id="irInicio" title="Back to start">SQL-Lens</button>
   <div class="buscador">
-    <input id="q" type="search" placeholder="Search for a table, view, procedure…" autocomplete="off" spellcheck="false" aria-label="Search for an object">
+    <input id="q" type="search" placeholder="Search for a table, procedure, JS file…" autocomplete="off" spellcheck="false" aria-label="Search for an object">
     <div id="resultados" hidden></div>
   </div>
+  <select id="filtroTipo" aria-label="Type of object" title="Show only one type of object: in the search, the start page and the list of what it affects"></select>
   <span class="origen" id="origen"></span>
 </header>
 
@@ -308,15 +319,22 @@ const TIPOS = {
   PROC: ['Stored procedure', 'PROC', 'procedure', 'procedures'], FUNCION: ['Function', 'FUNC', 'function', 'functions'],
   TRIGGER: ['Trigger', 'TRIG', 'trigger', 'triggers'], SINONIMO: ['Synonym', 'SYN', 'synonym', 'synonyms'],
   SECUENCIA: ['Sequence', 'SEQ', 'sequence', 'sequences'], JOB: ['SQL Agent job', 'JOB', 'job', 'jobs'],
+  JS: ['JavaScript file', 'JS', 'JavaScript file', 'JavaScript files'], CSS: ['Stylesheet', 'CSS', 'stylesheet', 'stylesheets'],
+  LOOKUP: ['Work Tasks lookup', 'LKP', 'lookup', 'lookups'],
   EXTERNO: ['In another database', 'EXT', 'object in another database', 'objects in other databases'],
   NO_EXISTE: ['Does not exist', '??', 'missing object', 'missing objects'],
 };
 const ORDEN_TIPOS = Object.keys(TIPOS);
+// Ficheros de los formularios: se nombran por su ruta (js/custom/x.js).
+const WEB = new Set(['JS', 'CSS']);
+const SIN_ESQUEMA = new Set(['JOB', 'LOOKUP']);
+// Lo que no está en las bases: los ficheros y los lookups de Work Tasks que llaman.
+const FUERA_BD = new Set(['JS', 'CSS', 'LOOKUP']);
 
 const indice = new Map(N.map((n, i) => [n.k, i]));
 const sale = N.map(() => []), entra = N.map(() => []);
 A.forEach((a, j) => { sale[a[0]].push(j); entra[a[1]].push(j); });
-const textoBusqueda = N.map(n => ((VARIAS_BASES ? n.b + '.' : '') + n.e + '.' + n.n).toLowerCase());
+const textoBusqueda = N.map((n, i) => (WEB.has(n.t) ? nombre(i) : (VARIAS_BASES ? n.b + '.' : '') + n.e + '.' + n.n).toLowerCase());
 const fmt = new Intl.NumberFormat('en-US');
 
 const $ = id => document.getElementById(id);
@@ -324,17 +342,20 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 
 function nombre(i, conBase) {
   const n = N[i];
-  if (n.t === 'JOB') return n.n;
+  if (SIN_ESQUEMA.has(n.t)) return n.n;
+  if (WEB.has(n.t)) return (n.e ? n.e + '/' : '') + n.n;
   return ((conBase || VARIAS_BASES || n.t === 'EXTERNO') ? n.b + '.' : '') + n.e + '.' + n.n;
 }
 function nombreHTML(i) {
   const n = N[i];
-  if (n.t === 'JOB') return esc(n.n);
+  if (SIN_ESQUEMA.has(n.t)) return esc(n.n);
+  if (WEB.has(n.t)) return `<small>${n.e ? esc(n.e) + '/' : ''}</small>${esc(n.n)}`;
   const base = (VARIAS_BASES || n.t === 'EXTERNO') ? esc(n.b) + '.' : '';
   return `<small>${base}${esc(n.e)}.</small>${esc(n.n)}`;
 }
 const tag = t => `<span class="tag t-${t}">${TIPOS[t][1]}</span>`;
 const cuantos = (n, t) => `${fmt.format(n)} ${n === 1 ? TIPOS[t][2] : TIPOS[t][3]}`;
+const mayuscula = s => s[0].toUpperCase() + s.slice(1);
 function enumerar(partes) {
   return partes.length < 2 ? partes.join('') : partes.slice(0, -1).join(', ') + ' and ' + partes[partes.length - 1];
 }
@@ -362,8 +383,10 @@ function recorrer(foco, abajo, max) {
 // ============================================================================
 // Estado
 // ============================================================================
-const estado = { foco: null, niveles: 2, abiertos: new Set() };
+const estado = { foco: null, niveles: 2, abiertos: new Set(), filtro: '' };
 try { const v = Number(localStorage.getItem('mapa-sql-niveles')); if (v) estado.niveles = v; } catch (e) { }
+// Filtro por tipo (arriba, junto al buscador): '' = todos.
+function pasaFiltro(i) { return !estado.filtro || N[i].t === estado.filtro; }
 
 // ============================================================================
 // Dibujo: lo que usa a la izquierda, el objeto en el centro, lo afectado a la derecha
@@ -426,7 +449,7 @@ function dibujar(reencuadrar) {
     }
     for (const v of c.visibles) {
       const n = N[v], alto = v === f ? 38 : NODEH;
-      html += `<div class="nodo t-${n.t}${v === f ? ' foco' : ''}" data-i="${v}" style="left:${x}px;top:${y.get(v) - alto / 2}px" title="${esc(TIPOS[n.t][0] + ' · ' + nombre(v, true))}">${tag(n.t)}<span class="nom">${nombreHTML(v)}</span></div>`;
+      html += `<div class="nodo t-${n.t}${v === f ? ' foco' : pasaFiltro(v) ? '' : ' fuera'}" data-i="${v}" style="left:${x}px;top:${y.get(v) - alto / 2}px" title="${esc(TIPOS[n.t][0] + ' · ' + nombre(v, true))}">${tag(n.t)}<span class="nom">${nombreHTML(v)}</span></div>`;
     }
     if (c.ocultos) {
       const ym = ((c.huecos - 1) / 2) * FILAH - NODEH / 2;
@@ -456,7 +479,7 @@ function dibujar(reencuadrar) {
   vista = { nivel, abajo, arriba, y, caja: { minX, maxX, minY, maxY } };
   const solo = nivel.size === 1;
   $('vacio').hidden = !solo;
-  if (solo) $('vacio').textContent = 'Nothing in the database uses it, and it uses nothing.';
+  if (solo) $('vacio').textContent = FUERA_BD.has(N[f].t) ? 'Nothing in the extraction uses it, and it uses nothing.' : 'Nothing in the database uses it, and it uses nothing.';
   if (reencuadrar) encajar(true);
 }
 
@@ -549,10 +572,12 @@ function ficha(i) {
   if (n.t === 'NO_EXISTE') nota = '<p class="nota alerta">The code refers to it, but it does not exist in the database. It may be created at run time, have been dropped, or be misspelled.</p>';
   else if (n.t === 'EXTERNO') nota = `<p class="nota">It lives in another database (${esc(n.b)}) that was not extracted, so what happens there is not shown.</p>`;
   else if (n.cifrado) nota = '<p class="nota alerta">Its code is encrypted or you have no permission to see it.</p>';
+  else if (n.d && WEB.has(n.t)) nota = '<p class="nota">Calls procedures or lookups through variables the map cannot follow (built text, function parameters): some calls may be missing.</p>';
   else if (n.d) nota = '<p class="nota">Uses dynamic SQL: it may touch objects the map cannot see. What could be inferred is shown dashed.</p>';
+  else if (n.t === 'LOOKUP') nota = '<p class="nota">Defined in Work Tasks: the map only knows the scripts that call it, not what it reads.</p>';
   return `<div class="ficha">
     <div class="tipo">${tag(n.t)} ${TIPOS[n.t][0]}</div>
-    <h2>${esc(n.t === 'JOB' ? n.n : n.e + '.' + n.n)}</h2>
+    <h2>${esc(SIN_ESQUEMA.has(n.t) || WEB.has(n.t) ? nombre(i) : n.e + '.' + n.n)}</h2>
     <div class="datos">${esc(datos.join(' · '))}</div>
     ${nota}
     <div class="acciones">
@@ -578,22 +603,27 @@ function fila(f, conRelacion) {
   return `<div class="fila" data-i="${f.v}" title="Click to center it">${tag(N[f.v].t)}<span class="nom">${nombreHTML(f.v)}</span>${extra}</div>`;
 }
 
-let afectados = [];
+let afectados = [];   // los que se ven en la lista (con el filtro, solo de ese tipo) y se copian
 function pintarPanel() {
   const i = estado.foco;
-  afectados = filasDe(recorrer(i, true, Infinity));
-  const usa = filasDe(recorrer(i, false, 1));
+  const todos = filasDe(recorrer(i, true, Infinity));
+  afectados = todos.filter(f => pasaFiltro(f.v));
+  const usa = filasDe(recorrer(i, false, 1)).filter(f => pasaFiltro(f.v));
 
   let html = ficha(i) + '<div class="impacto">';
-  if (!afectados.length) {
+  if (!todos.length && FUERA_BD.has(N[i].t)) {
+    html += `<p class="frase">Nothing in the extraction depends on it.</p><p class="desglose">A Work Tasks form might still use it: the form definitions are not extracted.</p></div>`;
+  } else if (!todos.length) {
     html += `<p class="frase">Nothing in the database depends on it.</p><p class="desglose">An application, report or SSIS package might still use it: the map cannot see those.</p></div>`;
   } else {
     const porTipo = new Map();
-    for (const f of afectados) porTipo.set(N[f.v].t, (porTipo.get(N[f.v].t) || 0) + 1);
+    for (const f of todos) porTipo.set(N[f.v].t, (porTipo.get(N[f.v].t) || 0) + 1);
     const desglose = ORDEN_TIPOS.filter(t => porTipo.has(t)).map(t => cuantos(porTipo.get(t), t));
-    html += `<p class="frase">Changing it affects <strong>${fmt.format(afectados.length)}</strong> ${afectados.length === 1 ? 'object' : 'objects'}</p>
-      <p class="desglose">${esc(enumerar(desglose))}</p>
-      <div class="acciones"><button class="boton" data-accion="copiarLista">Copy list for Excel</button></div></div>`;
+    const filtrado = estado.filtro
+      ? `<p class="desglose"><strong>Showing only ${TIPOS[estado.filtro][3]}: ${afectados.length ? fmt.format(afectados.length) : 'none'}.</strong></p>` : '';
+    html += `<p class="frase">Changing it affects <strong>${fmt.format(todos.length)}</strong> ${todos.length === 1 ? 'object' : 'objects'}</p>
+      <p class="desglose">${esc(enumerar(desglose))}</p>${filtrado}
+      ${afectados.length ? '<div class="acciones"><button class="boton" data-accion="copiarLista">Copy list for Excel</button></div>' : ''}</div>`;
     let actual = 0;
     for (const f of afectados) {
       if (f.l !== actual) {
@@ -696,7 +726,7 @@ function buscar(texto) {
   const res = [];
   for (let i = 0; i < N.length; i++) {
     const t = textoBusqueda[i];
-    if (!partes.every(p => t.includes(p))) continue;
+    if (!pasaFiltro(i) || !partes.every(p => t.includes(p))) continue;
     const n = N[i].n.toLowerCase();
     const puntos = n === texto || t === texto ? 0 : n.startsWith(texto) ? 1 : t.startsWith(texto) ? 2 : n.includes(texto) ? 3 : 4;
     res.push([puntos, n.length, i]);
@@ -727,7 +757,10 @@ document.addEventListener('click', e => { if (!e.target.closest('.buscador')) re
 document.addEventListener('keydown', e => {
   if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) { e.preventDefault(); q.focus(); q.select(); }
 });
-function elegir(i) { resultados.hidden = true; q.value = ''; q.blur(); irA(i); }
+function elegir(i) {
+  resultados.hidden = true; q.value = ''; q.blur();
+  irA(i);
+}
 
 // ============================================================================
 // Inicio
@@ -740,19 +773,44 @@ function pintarInicio() {
   const rotos = N.map((n, i) => i).filter(i => N[i].t === 'NO_EXISTE').sort((a, b) => usadoPor(b) - usadoPor(a));
   const lista = (ids, extra) => `<div class="lista">${ids.map(i => `<div class="fila" data-i="${i}">${tag(N[i].t)}<span class="nom">${nombreHTML(i)}</span><span class="extra">${esc(extra(i))}</span></div>`).join('')}</div>`;
   const tipos = ['TABLA', 'VISTA', 'PROC', 'FUNCION', 'TRIGGER', 'JOB'].filter(t => m.porTipo[t]).map(t => cuantos(m.porTipo[t], t));
-  $('inicio').innerHTML = `<div class="inicio">
-    <p><strong>${esc(m.bases.join(', '))} has ${esc(enumerar(tipos))}.</strong></p>
-    <div class="cajas">
-      <div class="caja"><h3>Most used</h3><p>Changing these is the riskiest.</p>
+  const web = ['JS', 'CSS'].filter(t => m.porTipo[t]).map(t => cuantos(m.porTipo[t], t));
+  const lookups = m.porTipo.LOOKUP ? `, which call ${cuantos(m.porTipo.LOOKUP, 'LOOKUP')}` : '';
+  // Con el filtro, todos los de ese tipo; sin él, los más usados y las referencias rotas.
+  const t = estado.filtro;
+  const deTipo = t && N.map((n, i) => i).filter(i => N[i].t === t)
+    .sort((a, b) => usadoPor(b) - usadoPor(a) || nombre(a).localeCompare(nombre(b)));
+  const cajas = t
+    ? `<div class="caja"><h3>${esc(mayuscula(TIPOS[t][3]))} (${fmt.format(deTipo.length)})</h3><p>All of them, the most used first.</p>
+        ${lista(deTipo, i => `used by ${fmt.format(usadoPor(i))}`)}</div>`
+    : `<div class="caja"><h3>Most used</h3><p>Changing these is the riskiest.</p>
         ${lista(top, i => `used by ${fmt.format(usadoPor(i))}`)}</div>
       ${rotos.length ? `<div class="caja"><h3>Broken references (${fmt.format(rotos.length)})</h3><p>The code refers to them, but they don't exist in the database.</p>
-        ${lista(rotos, i => `referenced by ${fmt.format(usadoPor(i))}`)}</div>` : ''}
-    </div>
+        ${lista(rotos, i => `referenced by ${fmt.format(usadoPor(i))}`)}</div>` : ''}`;
+  $('inicio').innerHTML = `<div class="inicio">
+    <p><strong>${esc(m.bases.join(', '))} has ${esc(enumerar(tipos))}.</strong>${web.length ? `<br>Web folders: ${esc(enumerar(web) + lookups)}.` : ''}</p>
+    <div class="cajas">${cajas}</div>
     ${m.avisos.length ? `<div class="avisos">${m.avisos.map(a => `<p class="nota alerta">${esc(a)}</p>`).join('')}</div>` : ''}
   </div>`;
 }
 $('inicio').addEventListener('click', e => {
   const f = e.target.closest('.fila[data-i]'); if (f) irA(Number(f.dataset.i));
+});
+
+// ============================================================================
+// Filtro por tipo: lo que encuentra el buscador, la lista del inicio y la del
+// panel. En el dibujo, los de otros tipos solo se atenúan (hacen falta para el camino).
+// ============================================================================
+const filtroTipo = $('filtroTipo');
+const porTipoN = {};
+for (const n of N) porTipoN[n.t] = (porTipoN[n.t] || 0) + 1;
+filtroTipo.innerHTML = `<option value="">All types (${fmt.format(N.length)})</option>` + ORDEN_TIPOS.filter(t => porTipoN[t])
+  .map(t => `<option value="${t}">${esc(mayuscula(TIPOS[t][3]))} (${fmt.format(porTipoN[t])})</option>`).join('');
+filtroTipo.addEventListener('change', () => {
+  estado.filtro = filtroTipo.value;
+  filtroTipo.classList.toggle('activo', !!estado.filtro);
+  q.placeholder = estado.filtro ? `Search ${TIPOS[estado.filtro][3]}…` : 'Search for a table, procedure, JS file…';
+  if (q.value.trim()) { encontrados = buscar(q.value); activo = 0; }
+  if (estado.foco !== null) { dibujar(false); pintarPanel(); } else pintarInicio();
 });
 
 // ============================================================================

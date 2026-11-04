@@ -13,6 +13,7 @@
   --add-bg: #e6f6ea; --add: #1d7a3a; --del-bg: #fdeaea; --del: #b42318;
   --c-TABLA: #2f6fdb; --c-VISTA: #0c93a3; --c-PROC: #7b4cd0; --c-FUNCION: #2a9555;
   --c-TRIGGER: #c9711a; --c-SINONIMO: #6c778a; --c-SECUENCIA: #6c778a; --c-JOB: #cf3f78;
+  --c-JS: #a07c00; --c-CSS: #8a6a5c;
   --mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, monospace;
   color-scheme: light;
 }
@@ -25,6 +26,7 @@
     --add-bg: #15301f; --add: #6fd394; --del-bg: #3a1818; --del: #f59a9a;
     --c-TABLA: #5d95f5; --c-VISTA: #2dbccb; --c-PROC: #a584f2; --c-FUNCION: #4cc27d;
     --c-TRIGGER: #eaa04c; --c-SINONIMO: #97a1b3; --c-SECUENCIA: #97a1b3; --c-JOB: #f0699f;
+    --c-JS: #e0bc3c; --c-CSS: #c09a8a;
     color-scheme: dark;
   }
 }
@@ -36,6 +38,7 @@
   --add-bg: #15301f; --add: #6fd394; --del-bg: #3a1818; --del: #f59a9a;
   --c-TABLA: #5d95f5; --c-VISTA: #2dbccb; --c-PROC: #a584f2; --c-FUNCION: #4cc27d;
   --c-TRIGGER: #eaa04c; --c-SINONIMO: #97a1b3; --c-SECUENCIA: #97a1b3; --c-JOB: #f0699f;
+  --c-JS: #e0bc3c; --c-CSS: #c09a8a;
   color-scheme: dark;
 }
 
@@ -43,7 +46,7 @@
 [hidden] { display: none !important; }
 html, body { margin: 0; }
 body { background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-button, input { font: inherit; color: inherit; }
+button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 
 .barra {
@@ -90,8 +93,11 @@ td .cero { color: var(--faint); }
 .boton { border: 1px solid var(--line); background: var(--panel); border-radius: 7px; padding: 6px 12px; min-height: 34px; }
 .boton:hover { background: var(--hover); }
 .herramientas .boton { margin-left: auto; }
-.filtro-activo { font-size: 13px; color: var(--muted); }
-.filtro-activo button { border: 0; background: none; color: var(--accent); padding: 0 4px; }
+#filtroTipo {
+  border: 1px solid var(--line); background: var(--panel); border-radius: 7px;
+  padding: 6px 8px; min-height: 34px; max-width: 260px; cursor: pointer;
+}
+#filtroTipo.activo { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
 
 .fila { display: flex; align-items: center; gap: 10px; padding: 7px 16px; border-bottom: 1px solid var(--line); min-height: 38px; }
 .fila.abrible { cursor: pointer; }
@@ -125,6 +131,7 @@ td .cero { color: var(--faint); }
 .t-TABLA { --c: var(--c-TABLA); } .t-VISTA { --c: var(--c-VISTA); } .t-PROC { --c: var(--c-PROC); }
 .t-FUNCION { --c: var(--c-FUNCION); } .t-TRIGGER { --c: var(--c-TRIGGER); }
 .t-SINONIMO { --c: var(--c-SINONIMO); } .t-SECUENCIA { --c: var(--c-SECUENCIA); } .t-JOB { --c: var(--c-JOB); }
+.t-JS { --c: var(--c-JS); } .t-CSS { --c: var(--c-CSS); }
 
 .marca-agua {
   position: fixed; right: 18px; bottom: 14px; z-index: 5; pointer-events: none;
@@ -153,7 +160,7 @@ td .cero { color: var(--faint); }
       <h2>Differences</h2>
       <div class="seg" id="estados" role="group" aria-label="Show"></div>
       <input id="buscar" type="search" placeholder="Filter by name…" autocomplete="off" spellcheck="false">
-      <span class="filtro-activo" id="filtroTipo"></span>
+      <select id="filtroTipo" aria-label="Type of object" title="Show only one type of object"></select>
       <button class="boton" id="copiar">Copy list for Excel</button>
     </div>
     <div id="lista"></div>
@@ -177,6 +184,7 @@ const D = JSON.parse(document.getElementById('datos').textContent);
 const TIPOS = {
   TABLA: ['Tables', 'TABLE'], VISTA: ['Views', 'VIEW'], PROC: ['Procedures', 'PROC'], FUNCION: ['Functions', 'FUNC'],
   TRIGGER: ['Triggers', 'TRIG'], SINONIMO: ['Synonyms', 'SYN'], SECUENCIA: ['Sequences', 'SEQ'], JOB: ['SQL Agent jobs', 'JOB'],
+  JS: ['JavaScript files', 'JS'], CSS: ['Stylesheets', 'CSS'],
 };
 const ESTADOS = { soloA: 'Only in A', soloB: 'Only in B', distinto: 'Different' };
 const fmt = new Intl.NumberFormat('en-US');
@@ -232,7 +240,9 @@ function pintarEstados() {
   const n = e => D.filas.filter(f => (e === 'todos' || f.e === e) && (!filtro.tipo || f.t === filtro.tipo)).length;
   $('estados').innerHTML = [['todos', 'All'], ['soloA', 'Only in A'], ['soloB', 'Only in B'], ['distinto', 'Different']]
     .map(([e, t]) => `<button data-e="${e}" aria-pressed="${filtro.estado === e}">${t} (${fmt.format(n(e))})</button>`).join('');
-  $('filtroTipo').innerHTML = filtro.tipo ? `Only ${TIPOS[filtro.tipo][0].toLowerCase()} <button id="quitarTipo" title="Show every type">✕</button>` : '';
+  // El desplegable de tipo sigue también a lo que se pulse en la tabla de resumen.
+  $('filtroTipo').value = filtro.tipo || '';
+  $('filtroTipo').classList.toggle('activo', !!filtro.tipo);
 }
 function diffHTML(d) {
   return d.split('\n').map(l => {
@@ -265,9 +275,12 @@ $('estados').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   filtro.estado = b.dataset.e; pintar();
 });
-$('filtroTipo').addEventListener('click', e => {
-  if (e.target.id === 'quitarTipo') { filtro.tipo = null; pintar(); }
-});
+// Filtro por tipo, como en el mapa: cuántas diferencias hay de cada tipo.
+const porTipo = {};
+for (const f of D.filas) porTipo[f.t] = (porTipo[f.t] || 0) + 1;
+$('filtroTipo').innerHTML = `<option value="">All types (${fmt.format(D.filas.length)})</option>` + D.tipos.filter(t => porTipo[t])
+  .map(t => `<option value="${t}">${TIPOS[t][0]} (${fmt.format(porTipo[t])})</option>`).join('');
+$('filtroTipo').addEventListener('change', e => { filtro.tipo = e.target.value || null; pintar(); });
 $('buscar').addEventListener('input', e => { filtro.texto = e.target.value; pintarLista(); });
 $('lista').addEventListener('click', e => {
   const f = e.target.closest('.fila.abrible'); if (!f) return;

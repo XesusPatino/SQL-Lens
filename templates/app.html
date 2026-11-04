@@ -73,9 +73,10 @@ button:disabled { cursor: default; opacity: .55; }
 .campo { display: grid; gap: 5px; }
 .campo label { font-weight: 600; font-size: 13px; }
 .campo small { color: var(--muted); font-size: 12.5px; }
-input[type="text"], select { width: 100%; padding: 8px 11px; border: 1px solid var(--line); border-radius: 7px;
+input[type="text"], select, textarea { width: 100%; padding: 8px 11px; border: 1px solid var(--line); border-radius: 7px;
   background: var(--panel2); min-height: 38px; }
-input[type="text"]:focus, select:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+input[type="text"]:focus, select:focus, textarea:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+textarea { font: 12.5px/1.6 var(--mono); color: inherit; resize: vertical; }
 
 .vista { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
@@ -86,6 +87,12 @@ input[type="text"]:focus, select:focus { border-color: var(--accent); outline: n
 .tarjeta h1 { font-size: 19px; margin: 0; }
 .tarjeta > p { margin: -10px 0 0; color: var(--muted); }
 .fila-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.opciones { display: grid; gap: 12px; }
+.casilla { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.casilla input { margin: 3px 0 0; width: 16px; height: 16px; accent-color: var(--accent); flex: none; }
+.casilla b { font-size: 13px; }
+.casilla small { display: block; color: var(--muted); font-size: 12.5px; }
+.opciones .campo { margin-left: 26px; }
 .acciones { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .registro { margin: 0; max-height: 280px; overflow: auto; padding: 12px 14px; border-radius: 8px; background: var(--panel2);
   border: 1px solid var(--line); font: 12.5px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; }
@@ -116,6 +123,9 @@ input[type="text"]:focus, select:focus { border-color: var(--accent); outline: n
 @keyframes giro { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .giro { animation-duration: 3s; } }
 
+/* Internet Explorer no conoce @supports: solo él ve el aviso #viejo */
+@supports (display: grid) { #viejo { display: none; } }
+
 @media (max-width: 760px) {
   .barra { gap: 12px; padding: 0 12px; }
   .marca span { display: none; }
@@ -126,6 +136,11 @@ input[type="text"]:focus, select:focus { border-color: var(--accent); outline: n
 </style>
 </head>
 <body>
+<div id="viejo" style="padding: 14px 20px; background: #fdeaea; color: #c0352b; border-bottom: 1px solid #f0c4c4; font: 14px 'Segoe UI', sans-serif;">
+  <b>This window uses Internet Explorer, which SQL-Lens cannot use.</b>
+  This machine has neither Microsoft Edge nor its WebView2 Runtime. To extract here, run <code>extraer.ps1</code>
+  (see the README, <i>From the command line</i>) and open the <code>.json</code> on your PC.
+</div>
 <header class="barra">
   <div class="marca">
     <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -170,6 +185,16 @@ input[type="text"]:focus, select:focus { border-color: var(--accent); outline: n
           <small>Separated by commas.</small>
         </div>
       </div>
+      <div class="opciones">
+        <label class="casilla"><input type="checkbox" id="conWeb">
+          <span><b>Web files</b><small>The .js and .css of the Work Tasks forms, to see the procedures and lookups they call.</small></span>
+        </label>
+        <div class="campo" id="campoWeb" hidden>
+          <label for="carpetasWeb">Folders</label>
+          <textarea id="carpetasWeb" rows="2" wrap="off" spellcheck="false"></textarea>
+          <small>One per line, with their subfolders (custom). Read on this computer.</small>
+        </div>
+      </div>
       <div class="acciones">
         <button class="boton primario" id="botonExtraer" type="submit">Extract</button>
         <!-- <span class="campo"><small>Signs in with your Windows user.</small></span> -->
@@ -179,8 +204,9 @@ input[type="text"]:focus, select:focus { border-color: var(--accent); outline: n
     </form>
     <div class="nota-carpeta">
       <span>If extracted on another server with <code>extraer.ps1</code>:</span>
-      <span> Copy its <code>.json</code> into the extractions folder and it appears in Map and Compare.</span>
-      <button class="enlace" type="button" data-carpeta="extractions">Open extractions folder</button>
+      <span> Copy its <code>.json</code> into <code>extractions\extractions_wf</code> if its name ends in <code>_wf</code>,
+        or into <code>extractions\extractions_db</code>. It appears in Map and Compare.</span>
+      <button class="enlace" type="button" data-carpeta="extractions">Open extractions folders</button>
     </div>
   </div>
 </section>
@@ -264,17 +290,23 @@ document.querySelector('.pestanas').addEventListener('click', e => {
   const b = e.target.closest('button'); if (b) irA(b.dataset.vista);
 });
 
-// ---------- extracciones disponibles ----------
+// ---------- extracciones disponibles: una carpeta por tipo, para comparar las del mismo tipo ----------
 let extracciones = [];
+const GRUPOS = {
+  extractions_db: 'Database only', extractions_wf: 'With web files', extractions: 'Not sorted',
+};
 const fecha = s => { const d = new Date(s * 1000); return d.toLocaleDateString('en-CA') + ' ' + d.toTimeString().slice(0, 5); };
 function opciones(sel, elegida) {
   if (!extracciones.length) {
     sel.innerHTML = '<option value="">No extractions yet: use the Extract tab</option>';
     return;
   }
-  sel.innerHTML = extracciones.map(x =>
-    `<option value="${esc(x.name)}">${esc(x.name.replace(/\.json$/i, ''))}  ·  ${fecha(x.modified)}  ·  ${(x.size / 1048576).toFixed(1)} MB</option>`).join('');
-  if (elegida && extracciones.some(x => x.name === elegida)) sel.value = elegida;
+  sel.innerHTML = Object.keys(GRUPOS).map(carpeta => {
+    const lista = extracciones.filter(x => x.folder === carpeta);
+    return !lista.length ? '' : `<optgroup label="${esc(GRUPOS[carpeta])}  (${carpeta})">` + lista.map(x =>
+      `<option value="${esc(x.id)}">${esc(x.name.replace(/\.json$/i, ''))}  ·  ${fecha(x.modified)}  ·  ${(x.size / 1048576).toFixed(1)} MB</option>`).join('') + '</optgroup>';
+  }).join('');
+  if (elegida && extracciones.some(x => x.id === elegida)) sel.value = elegida;
 }
 async function cargarLista(nueva) {
   try {
@@ -283,7 +315,10 @@ async function cargarLista(nueva) {
   } catch (e) { extracciones = []; }
   opciones($('selMapa'), nueva || $('selMapa').value || recuerdo('mapa'));
   opciones($('selA'), $('selA').value || recuerdo('a'));
-  opciones($('selB'), $('selB').value || recuerdo('b') || extracciones[1]?.name);
+  // Por defecto, B es otra del mismo tipo (carpeta) que A.
+  const a = extracciones.find(x => x.id === $('selA').value);
+  const otra = extracciones.find(x => x.id !== a?.id && x.folder === a?.folder) || extracciones.find(x => x.id !== a?.id);
+  opciones($('selB'), $('selB').value || recuerdo('b') || otra?.id);
   const vacio = !extracciones.length;
   $('botonMapa').disabled = vacio;
   $('botonComparar').disabled = extracciones.length < 2;
@@ -294,6 +329,14 @@ $('servidor').value = recuerdo('servidor') || 'localhost';
 $('bases').value = recuerdo('bases') || '';
 let extraida = null;
 
+// Opcional: los .js/.css de los formularios (-Web).
+const NEXTGENFORMS = 'C:\\Program Files\\AVEVA\\Work Tasks\\Web\\BPMUITemplates\\Default\\NextGenForms\\';
+$('conWeb').checked = recuerdo('web') === '1';
+$('carpetasWeb').value = recuerdo('carpetas-web') || NEXTGENFORMS + 'js\n' + NEXTGENFORMS + 'css';
+const verCarpetas = () => { $('campoWeb').hidden = !$('conWeb').checked; };
+$('conWeb').addEventListener('change', verCarpetas);
+verCarpetas();
+
 function estado(clase, html) {
   const e = $('estadoExtraer');
   e.className = 'estado ' + clase; e.innerHTML = html; e.hidden = false;
@@ -302,12 +345,14 @@ $('formExtraer').addEventListener('submit', async e => {
   e.preventDefault();
   const servidor = $('servidor').value.trim(), bases = $('bases').value.trim();
   if (!servidor || !bases) return;
+  const web = $('conWeb').checked ? $('carpetasWeb').value.split('\n').map(c => c.trim()).filter(Boolean) : null;
   recordar('servidor', servidor); recordar('bases', bases);
+  recordar('web', web ? '1' : '0'); recordar('carpetas-web', $('carpetasWeb').value.trim());
   $('botonExtraer').disabled = true;
   $('registro').textContent = ''; $('registro').hidden = false;
   estado('curso', `Extracting <b>${esc(bases)}</b> from <b>${esc(servidor)}</b>… a large database takes a few minutes.`);
   try {
-    const { id } = await api('/api/extract', { server: servidor, databases: bases });
+    const { id } = await api('/api/extract', { server: servidor, databases: bases, web });
     let desde = 0;
     while (true) {
       await new Promise(r => setTimeout(r, 700));
@@ -319,9 +364,10 @@ $('formExtraer').addEventListener('submit', async e => {
       }
       if (t.state === 'done') {
         extraida = t.file;
-        estado('ok', `<div>Saved <span class="mono">${esc(t.file)}</span> in the extractions folder.
+        const [carpeta, nombre] = t.file.split('/');
+        estado('ok', `<div>Saved <span class="mono">${esc(nombre)}</span> in <b>${esc(carpeta)}</b>.
           <div class="acciones" style="margin-top:10px"><button class="boton primario" type="button" id="abrirExtraida">Open its map</button>
-          <button class="boton" type="button" data-carpeta="extractions">Open folder</button></div></div>`);
+          <button class="boton" type="button" data-carpeta="${esc(carpeta)}">Open folder</button></div></div>`);
         cargarLista(t.file);
         break;
       }

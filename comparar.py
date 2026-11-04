@@ -14,10 +14,10 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-from map import COMPARACIONES, NOMBRES_TIPO, buscar_extraccion, en_carpeta, escribir_html
+from map import COMPARACIONES, NOMBRES_TIPO, TIPOS_EXTRACCION, buscar_extraccion, en_carpeta, escribir_html, sufijo_tipo
 from core.grafo import TIPO_OBJETO
 
-TIPOS = ['TABLA', 'VISTA', 'PROC', 'FUNCION', 'TRIGGER', 'SINONIMO', 'SECUENCIA', 'JOB']
+TIPOS = ['TABLA', 'VISTA', 'PROC', 'FUNCION', 'TRIGGER', 'SINONIMO', 'SECUENCIA', 'JOB', 'JS', 'CSS']
 MAX_LINEAS_DIFF = 1500
 
 
@@ -88,8 +88,14 @@ def cargar(ruta, base_pedida):
                             f"{(p['command'] or '').rstrip()}" for p in sorted(lista, key=lambda p: p['step_id']))
         objetos[('JOB', nombre.lower())] = {'n': nombre, 's': texto, 'm': ''}
 
-    return {'etiqueta': f"{ex['servidor']} · {base}", 'fecha': ex['fecha'],
-            'conColumnas': con_columnas, 'conJobs': bool(ex.get('jobs')), 'objetos': objetos}
+    # Los .js y .css de los formularios (extraer.ps1 -Web), por su ruta.
+    for f in ex.get('web', ()):
+        ruta = f['ruta'].replace('\\', '/')
+        tipo = 'CSS' if ruta.lower().endswith('.css') else 'JS'
+        objetos[(tipo, ruta.lower())] = {'n': ruta, 's': f.get('codigo') or '', 'm': (f.get('fecha') or '')[:10]}
+
+    return {'etiqueta': f"{ex['servidor']} · {base}", 'fecha': ex['fecha'], 'conColumnas': con_columnas,
+            'conJobs': bool(ex.get('jobs')), 'conWeb': 'web' in ex, 'objetos': objetos}
 
 
 def _lineas(texto):
@@ -153,6 +159,8 @@ def preparar(ruta_a, ruta_b, db_a=None, db_b=None):
                           'compared by name. Extract it again with the current extraer.ps1 / map.py.')
     if a['conJobs'] != b['conJobs']:
         avisos.append('Only one of the two extractions has SQL Agent jobs: the job comparison is not meaningful.')
+    if a['conWeb'] != b['conWeb']:
+        avisos.append('Only one of the two extractions has the web files (-Web): the JS and CSS comparison is not meaningful.')
     datos = {
         'a': {'etiqueta': a['etiqueta'], 'fecha': a['fecha']},
         'b': {'etiqueta': b['etiqueta'], 'fecha': b['fecha']},
@@ -162,7 +170,8 @@ def preparar(ruta_a, ruta_b, db_a=None, db_b=None):
 
 
 def nombre_comparacion(a, b):
-    texto = f"compare_{a['etiqueta']}_vs_{b['etiqueta']}_{datetime.now():%Y%m%d}"
+    tipo = TIPOS_EXTRACCION[a['conWeb']]
+    texto = f"compare_{a['etiqueta']}_vs_{b['etiqueta']}{sufijo_tipo(tipo)}_{datetime.now():%Y%m%d}"
     return Path(re.sub(r'[^\w.-]+', '-', texto) + '.html')
 
 
@@ -181,11 +190,11 @@ def main():
     escribir_html(datos, salida, plantilla='comparar.html')
 
     print(f"A: {a['etiqueta']} ({a['fecha']})\nB: {b['etiqueta']} ({b['fecha']})\n")
-    print(f"{'':<12}{'A':>7}{'B':>7}{'only A':>9}{'only B':>9}{'differ':>9}")
+    print(f"{'':<16}{'A':>7}{'B':>7}{'only A':>9}{'only B':>9}{'differ':>9}")
     for t in TIPOS:
         r = resumen[t]
         if r['a'] or r['b']:
-            print(f"{NOMBRES_TIPO[t]:<12}{r['a']:>7}{r['b']:>7}{r['soloA']:>9}{r['soloB']:>9}{r['distintos']:>9}")
+            print(f"{NOMBRES_TIPO[t]:<16}{r['a']:>7}{r['b']:>7}{r['soloA']:>9}{r['soloB']:>9}{r['distintos']:>9}")
     for aviso in avisos:
         print(f'\nWARNING: {aviso}')
     print(f'\nDone: {salida.resolve()}')

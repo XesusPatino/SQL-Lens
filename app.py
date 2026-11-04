@@ -25,7 +25,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import comparar
-from map import CARPETA, COMPARACIONES, EXTRACCIONES, MAPAS, html_de, nombre_salida
+from map import (CARPETA, CARPETAS_EXTRACCION, COMPARACIONES, EXTRACCIONES, MAPAS, TIPOS_EXTRACCION,
+                 TODAS_EXTRACCIONES, html_de, nombre_salida, tipo_extraccion)
 from core.grafo import construir
 
 # Plantillas y extraer.ps1: junto al script o, en el .exe, en su carpeta temporal.
@@ -56,18 +57,21 @@ def _mensaje(e):
 # EXTRACCIONES:
 
 def lista_extracciones():
-    if not EXTRACCIONES.exists():
-        return []
-    items = [{'name': p.name, 'size': p.stat().st_size, 'modified': p.stat().st_mtime}
-             for p in EXTRACCIONES.glob('*.json') if p.is_file()]
+    """Las de todas las carpetas (una por tipo); cada una se identifica por «carpeta/nombre»."""
+    items = [{'id': f'{carpeta.name}/{p.name}', 'folder': carpeta.name, 'name': p.name,
+              'size': p.stat().st_size, 'modified': p.stat().st_mtime}
+             for carpeta in TODAS_EXTRACCIONES if carpeta.exists()
+             for p in carpeta.glob('*.json') if p.is_file()]
     return sorted(items, key=lambda x: -x['modified'])
 
 
-def extraccion(nombre):
-    """Solo ficheros de extractions/: el nombre llega del navegador."""
-    ruta = EXTRACCIONES / Path(nombre or '').name
-    if ruta.suffix.lower() != '.json' or not ruta.is_file():
-        raise ErrorUsuario(f'"{nombre}" is not in the extractions folder any more. Refresh the list.')
+def extraccion(ident):
+    """Solo ficheros de las carpetas de extracciones: «carpeta/nombre» llega del navegador."""
+    carpeta, _, nombre = (ident or '').rpartition('/')
+    base = {c.name: c for c in TODAS_EXTRACCIONES}.get(carpeta)
+    ruta = base / Path(nombre).name if base else None
+    if not ruta or ruta.suffix.lower() != '.json' or not ruta.is_file():
+        raise ErrorUsuario(f'"{nombre or ident}" is not in the extractions folders any more. Refresh the list.')
     return ruta
 
 
@@ -93,12 +97,14 @@ def mapa(ruta):
     def fabrica():
         try:
             ex = json.loads(ruta.read_text(encoding='utf-8-sig'))
-            return html_de(construir(ex), 'visor.html'), nombre_salida(ex['servidor'], list(ex['bases']))
+            return (html_de(construir(ex), 'visor.html'),
+                    nombre_salida(ex['servidor'], list(ex['bases']), tipo_extraccion(ex)))
         except (ValueError, KeyError) as e:
             raise ErrorUsuario(f'{ruta.name} is not an extraction file ({e}).')
         except SystemExit as e:
             raise ErrorUsuario(_mensaje(e))
-    return en_cache(('map', ruta.name, ruta.stat().st_mtime), fabrica)
+    # Por la ruta entera: el mismo nombre puede estar en dos carpetas.
+    return en_cache(('map', str(ruta), ruta.stat().st_mtime), fabrica)
 
 
 def comparacion(ruta_a, ruta_b):
@@ -110,7 +116,7 @@ def comparacion(ruta_a, ruta_b):
             raise ErrorUsuario(f'One of the files is not an extraction file ({e}).')
         except SystemExit as e:
             raise ErrorUsuario(_mensaje(e))
-    clave = ('compare', ruta_a.name, ruta_a.stat().st_mtime, ruta_b.name, ruta_b.stat().st_mtime)
+    clave = ('compare', str(ruta_a), ruta_a.stat().st_mtime, str(ruta_b), ruta_b.stat().st_mtime)
     return en_cache(clave, fabrica)
 
 
@@ -126,22 +132,37 @@ class Trabajo:
 TRABAJOS = {}
 
 
-def lanzar_extraccion(servidor, bases):
+def lanzar_extraccion(servidor, bases, web=None):
+    """web: carpetas de .js/.css (-Web), o None."""
     servidor = (servidor or '').strip()
     bases = [b.strip() for b in (bases or '').split(',') if b.strip()]
     if not servidor or not bases:
         raise ErrorUsuario('Write the server and at least one database.')
-    EXTRACCIONES.mkdir(parents=True, exist_ok=True)
+    carpetas = []
+    if web is not None:
+        carpetas = [c.strip().strip('"') for c in web if isinstance(c, str) and c.strip().strip('"')]
+        if not carpetas:
+            raise ErrorUsuario('Write at least one web folder, or untick Web files.')
+        # Se leen en este equipo (como haría extraer.ps1): en la VM, o por una ruta compartida.
+        for c in carpetas:
+            if not Path(c).is_dir():
+                raise ErrorUsuario(f'The folder "{c}" does not exist on this computer. Web files are read where '
+                                   'SQL-Lens runs: run it on the VM, or use a shared path (\\\\server\\c$\\...).')
+    # Cada tipo en su carpeta (extractions_db, extractions_wf), para comparar las del mismo tipo.
+    destino = CARPETAS_EXTRACCION[TIPOS_EXTRACCION[bool(carpetas)]]
+    destino.mkdir(parents=True, exist_ok=True)
 
     def q(texto):   # cadena literal de PowerShell
         return "'" + texto.replace("'", "''") + "'"
 
     comando = ('[Console]::OutputEncoding = [Text.Encoding]::UTF8; '
                f"& {q(str(RECURSOS / 'extraer.ps1'))} -Server {q(servidor)} "
-               f"-Databases {','.join(q(b) for b in bases)}; exit $LASTEXITCODE")
+               f"-Databases {','.join(q(b) for b in bases)}"
+               + (f" -Web {','.join(q(c) for c in carpetas)}" if carpetas else '')
+               + '; exit $LASTEXITCODE')
     proceso = subprocess.Popen(
         ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', comando],
-        cwd=EXTRACCIONES, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        cwd=destino, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         creationflags=SIN_VENTANA)
     trabajo = Trabajo()
     ident = secrets.token_hex(6)
@@ -153,7 +174,7 @@ def lanzar_extraccion(servidor, bases):
             trabajo.lineas.append(linea)
             m = re.match(r'Done in .*? s: (.+?\.json) \(', linea)
             if m:
-                trabajo.fichero = Path(m.group(1)).name
+                trabajo.fichero = f'{destino.name}/{Path(m.group(1)).name}'
         proceso.wait()
         if proceso.returncode == 0 and trabajo.fichero:
             trabajo.estado = 'done'
@@ -272,7 +293,7 @@ class Manejador(BaseHTTPRequestHandler):
                 VIGIA.latido()
                 return self._json({'ok': True})
             if url.path == '/api/extractions':
-                return self._json({'folder': str(EXTRACCIONES), 'items': lista_extracciones()})
+                return self._json({'items': lista_extracciones()})
             if url.path == '/api/job':
                 trabajo = TRABAJOS.get(arg('id'))
                 if not trabajo:
@@ -307,7 +328,9 @@ class Manejador(BaseHTTPRequestHandler):
             largo = int(self.headers.get('Content-Length') or 0)
             cuerpo = json.loads(self.rfile.read(largo) or b'{}')
             if url.path == '/api/extract':
-                return self._json({'id': lanzar_extraccion(cuerpo.get('server'), cuerpo.get('databases'))})
+                web = cuerpo.get('web')
+                return self._json({'id': lanzar_extraccion(cuerpo.get('server'), cuerpo.get('databases'),
+                                                           web if isinstance(web, list) else None)})
             if url.path == '/api/save':
                 if cuerpo.get('kind') == 'map':
                     html, nombre = mapa(extraccion(cuerpo.get('file')))
@@ -319,7 +342,14 @@ class Manejador(BaseHTTPRequestHandler):
                 (carpeta / nombre).write_text(html, encoding='utf-8')
                 return self._json({'path': str(carpeta / nombre), 'name': nombre.name})
             if url.path == '/api/open-folder':
-                carpeta = {'extractions': EXTRACCIONES, 'maps': MAPAS, 'comparisons': COMPARACIONES}.get(cuerpo.get('which'))
+                if cuerpo.get('which') == 'extractions':
+                    # La que tiene todas dentro: se crean las de cada tipo, para copiar ahí las de extraer.ps1.
+                    for c in CARPETAS_EXTRACCION.values():
+                        c.mkdir(parents=True, exist_ok=True)
+                    carpeta = EXTRACCIONES
+                else:
+                    carpeta = {'maps': MAPAS, 'comparisons': COMPARACIONES,
+                               **{c.name: c for c in TODAS_EXTRACCIONES}}.get(cuerpo.get('which'))
                 if not carpeta:
                     raise ErrorUsuario('Unknown folder.')
                 carpeta.mkdir(parents=True, exist_ok=True)
@@ -331,6 +361,13 @@ class Manejador(BaseHTTPRequestHandler):
         except Exception as e:  # noqa: BLE001
             registrar(traceback.format_exc())
             return self._json({'error': f'Unexpected error: {e}'}, 500)
+
+
+class Servidor(ThreadingHTTPServer):
+    # En Windows, SO_REUSEADDR deja a un segundo SQL-Lens escuchar en el mismo puerto que el primero, y sus
+    # peticiones pueden llegar al otro (403). Sin él, el segundo usa otro puerto; reabrir el 47821 justo
+    # después de cerrar sigue funcionando.
+    allow_reuse_address = False
 
 
 # VENTANA:
@@ -368,13 +405,19 @@ def ventana_propia(url):
     """
     La ventana del propio programa (pywebview + WebView2): Windows le pone el icono
     del .exe tal cual, nítido en la barra de tareas. Devuelve False si no se puede
-    (sin pywebview o sin WebView2), para abrir Edge en su lugar.
+    (sin pywebview o sin WebView2, p. ej. en Windows Server), para abrir Edge en su lugar.
     """
     try:
         import webview
     except ImportError:
         return False
     try:
+        # Sin el runtime de WebView2 (o con .NET < 4.6.2), pywebview usa sin avisar el motor de
+        # Internet Explorer, que no entiende la página (sin colores ni JavaScript): mejor Edge.
+        from webview.platforms import winforms
+        if getattr(winforms, 'renderer', 'edgechromium') != 'edgechromium':
+            registrar(f'No WebView2 on this machine (the window would use {winforms.renderer}): opening Edge instead.')
+            return False
         webview.create_window('SQL-Lens', url, width=1440, height=900, min_size=(900, 600))
         # Sin modo privado, para que recuerde el tema y lo último elegido.
         datos = Path(os.environ.get('LOCALAPPDATA') or CARPETA) / 'SQL-Lens'
@@ -387,9 +430,9 @@ def ventana_propia(url):
 
 def main():
     try:
-        servidor = ThreadingHTTPServer(('127.0.0.1', PUERTO_PREFERIDO), Manejador)
+        servidor = Servidor(('127.0.0.1', PUERTO_PREFERIDO), Manejador)
     except OSError:
-        servidor = ThreadingHTTPServer(('127.0.0.1', 0), Manejador)
+        servidor = Servidor(('127.0.0.1', 0), Manejador)
     url = f'http://127.0.0.1:{servidor.server_port}/?t={TOKEN}'
     if '--no-window' in sys.argv:
         # Para pruebas: sin ventana, la dirección sale por la consola (o al log en el .exe, que no tiene).

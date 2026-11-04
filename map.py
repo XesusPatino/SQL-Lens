@@ -171,6 +171,25 @@ def extraer(args):
     return extraccion
 
 
+def leer_web(carpetas):
+    """Los .js y .css de esas carpetas, como los guarda extraer.ps1 -Web."""
+    ficheros, vistos = [], set()
+    for carpeta in carpetas:
+        raiz = carpeta.resolve()
+        if not raiz.is_dir():
+            sys.exit(f'The folder "{carpeta}" does not exist.')
+        for f in sorted(raiz.rglob('*'), key=lambda p: str(p).lower()):
+            if not f.is_file() or f.suffix.lower() not in ('.js', '.css') or f in vistos:
+                continue
+            vistos.add(f)
+            ficheros.append({
+                'ruta': f"{raiz.name}/{f.relative_to(raiz).as_posix()}",
+                'fecha': datetime.fromtimestamp(f.stat().st_mtime).strftime('%Y-%m-%d'),
+                'codigo': f.read_text(encoding='utf-8-sig', errors='replace'),
+            })
+    return ficheros
+
+
 def html_de(datos, plantilla='visor.html'):
     """La plantilla con los datos dentro: un .html que funciona solo."""
     texto = (Path(__file__).parent / 'templates' / plantilla).read_text(encoding='utf-8')
@@ -193,15 +212,31 @@ EXTRACCIONES = CARPETA / 'extractions'
 MAPAS = CARPETA / 'maps'
 COMPARACIONES = CARPETA / 'comparisons'
 
+# Dentro de extractions/, una carpeta por tipo de extracción, para comparar las del mismo tipo.
+# Clave: si lleva los .js/.css (-Web). Los .json sueltos en extractions/ (los de antes) también se leen.
+TIPOS_EXTRACCION = {False: 'db', True: 'wf'}
+CARPETAS_EXTRACCION = {t: EXTRACCIONES / f'extractions_{t}' for t in TIPOS_EXTRACCION.values()}
+TODAS_EXTRACCIONES = [*CARPETAS_EXTRACCION.values(), EXTRACCIONES]
+
+
+def tipo_extraccion(extraccion):
+    """'db' o 'wf', según lleve o no los ficheros web."""
+    return TIPOS_EXTRACCION['web' in extraccion]
+
+
+def sufijo_tipo(tipo):
+    """Para los nombres de fichero (como extraer.ps1): nada si es solo la base."""
+    return '' if tipo == 'db' else f'_{tipo}'
+
 
 def buscar_extraccion(ruta):
-    """La ruta tal cual o, si no existe, ese nombre dentro de extractions/."""
+    """La ruta tal cual o, si no existe, ese nombre en las carpetas de extracciones."""
     if ruta.exists():
         return ruta
-    dentro = EXTRACCIONES / ruta.name
-    if dentro.exists():
-        return dentro
-    sys.exit(f'{ruta} not found (also looked in {EXTRACCIONES})')
+    for carpeta in TODAS_EXTRACCIONES:
+        if (carpeta / ruta.name).exists():
+            return carpeta / ruta.name
+    sys.exit(f'{ruta} not found (also looked in {", ".join(c.name for c in TODAS_EXTRACCIONES)})')
 
 
 def en_carpeta(ruta, carpeta):
@@ -212,8 +247,8 @@ def en_carpeta(ruta, carpeta):
     return ruta
 
 
-def nombre_salida(servidor, bases):
-    texto = f"map_{servidor}_{'_'.join(bases)}_{datetime.now():%Y%m%d}"
+def nombre_salida(servidor, bases, tipo='db'):
+    texto = f"map_{servidor}_{'_'.join(bases)}{sufijo_tipo(tipo)}_{datetime.now():%Y%m%d}"
     return Path(re.sub(r'[^\w.-]+', '-', texto) + '.html')
 
 
@@ -221,6 +256,7 @@ NOMBRES_TIPO = {
     'TABLA': 'tables', 'VISTA': 'views', 'PROC': 'procedures', 'FUNCION': 'functions',
     'TRIGGER': 'triggers', 'SINONIMO': 'synonyms', 'SECUENCIA': 'sequences', 'JOB': 'jobs',
     'EXTERNO': 'in other databases', 'NO_EXISTE': 'missing',
+    'JS': 'JavaScript files', 'CSS': 'stylesheets', 'LOOKUP': 'lookups',
 }
 
 
@@ -239,6 +275,8 @@ def main():
     p.add_argument('--no-code', '--sin-codigo', dest='sin_codigo', action='store_true',
                    help='Do not include the module code in the map (lighter)')
     p.add_argument('--no-jobs', '--sin-jobs', dest='sin_jobs', action='store_true', help='Do not read SQL Agent jobs')
+    p.add_argument('--web', metavar='FOLDER', type=Path, nargs='+',
+                   help='Also read the .js and .css of these folders (like extraer.ps1 -Web)')
     p.add_argument('--timeout', type=int, default=600, help='Seconds per query (600)')
     args = p.parse_args()
     if not args.desde and not (args.servidor and args.bases):
@@ -250,18 +288,25 @@ def main():
         extraccion = json.loads(desde.read_text(encoding='utf-8-sig'))
         print(f'Read {desde.name}: {", ".join(extraccion["bases"])} from {extraccion["servidor"]}, '
               f'{extraccion["fecha"]}')
+        if args.web:
+            extraccion['web'] = leer_web(args.web)
     else:
         extraccion = extraer(args)
+        if args.web:
+            extraccion['web'] = leer_web(args.web)
         # El extraer.ps1 escribe el .json: recrea el mapa sin necesidad de conectarse y alimenta a comparar.py.
+        tipo = TIPOS_EXTRACCION[bool(args.web)]
         crudo = en_carpeta(Path(re.sub(r'[^\w.-]+', '-', f"extraction_{extraccion['servidor']}_"
-                                       f"{'_'.join(extraccion['bases'])}_{datetime.now():%Y%m%d}") + '.json'),
-                           EXTRACCIONES)
+                                       f"{'_'.join(extraccion['bases'])}{sufijo_tipo(tipo)}_{datetime.now():%Y%m%d}")
+                                + '.json'),
+                           CARPETAS_EXTRACCION[tipo])
         crudo.write_text(json.dumps(extraccion, ensure_ascii=False,
                                     default=lambda v: v.strftime('%Y-%m-%d')), encoding='utf-8')
         print(f'\nExtraction saved: {crudo}')
     print('\nAnalysing the code...')
     datos = construir(extraccion, incluir_codigo=not args.sin_codigo)
-    salida = en_carpeta(args.salida or nombre_salida(extraccion['servidor'], list(extraccion['bases'])), MAPAS)
+    salida = en_carpeta(args.salida or nombre_salida(extraccion['servidor'], list(extraccion['bases']),
+                                                     tipo_extraccion(extraccion)), MAPAS)
     escribir_html(datos, salida)
     if args.json:
         salida.with_suffix('.json').write_text(

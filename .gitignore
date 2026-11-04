@@ -1,5 +1,6 @@
 # Datos de las bases de datos (privados: llevan el código de los procedimientos):
 extractions/
+extractions_*/
 maps/
 comparisons/
 *.json

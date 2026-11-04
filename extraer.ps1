@@ -16,18 +16,31 @@
     The queries are the same as in map.py: if you change one, change both.
     The .json contains the code of every procedure: treat it accordingly.
 
+    With -Web it also saves the .js and .css files of those folders (and their
+    subfolders), so the map shows which scripts call which procedures.
+
+    With -Web the file name ends in _wf: on the PC, copy it into
+    extractions\extractions_wf (the others into extractions\extractions_db), so
+    that the same kinds are compared.
+
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\extraer.ps1 -Server localhost -Databases MESDB
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\extraer.ps1 -Server localhost -Databases MESDB,MESDB002
+
+.EXAMPLE
+    powershell -ExecutionPolicy Bypass -File .\extraer.ps1 -Server localhost -Databases MESDB -Web "C:\Program Files\AVEVA\Work Tasks\Web\BPMUITemplates\Default\NextGenForms\js","C:\Program Files\AVEVA\Work Tasks\Web\BPMUITemplates\Default\NextGenForms\css"
 #>
+# Named parameters only: a stray value must not end up in -User or -Output.
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(Mandatory = $true)][Alias('Servidor')][string]$Server,
     [Parameter(Mandatory = $true)][Alias('Bases')][string[]]$Databases,
     [Alias('Usuario')][string]$User,
     [Alias('Salida')][string]$Output,
     [Alias('SinJobs')][switch]$NoJobs,
+    [string[]]$Web,
     [int]$Timeout = 600
 )
 
@@ -148,10 +161,55 @@ function Read-Query([string]$sql, [hashtable]$parameters = @{}) {
 
 function Quote-Name([string]$name) { return '[' + $name.Replace(']', ']]') + ']' }
 
+# The .js and .css of the web folders: path from the folder (with its name, e.g.
+# "js/custom/x.js"), date and code. Returns how many files it wrote.
+function Write-WebFiles($w, [string[]]$folders, $warnings) {
+    $w.Write('[')
+    $first = $true
+    $count = 0
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($folder in $folders) {
+        $root = (Get-Item -LiteralPath $folder).FullName.TrimEnd('\')
+        $prefix = Split-Path $root -Leaf
+        $files = Get-ChildItem -LiteralPath $root -Recurse -File |
+            Where-Object { $_.Extension -in '.js', '.css' } | Sort-Object FullName
+        foreach ($f in $files) {
+            if (-not $seen.Add($f.FullName)) { continue }   # a folder inside another one given
+            $relative = $prefix + $f.FullName.Substring($root.Length).Replace('\', '/')
+            try { $code = [System.IO.File]::ReadAllText($f.FullName) }
+            catch { $warnings.Add("Could not read $($f.FullName) ($($_.Exception.Message))"); continue }
+            if ($first) { $first = $false } else { $w.Write(",`n") }
+            $w.Write('{"ruta":' + (Escape-Json $relative) + ',"fecha":' + (Format-Value $f.LastWriteTime) +
+                     ',"codigo":' + (Escape-Json $code) + '}')
+            $count++
+        }
+    }
+    $w.Write(']')
+    return $count
+}
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 if ($MyInvocation.InvocationName -eq '.') { return }   # dot-sourced: functions only
+
+# False (not an error) for a text with quotes or other characters a path cannot have.
+function Test-Folder($p) { try { Test-Path -LiteralPath $p -PathType Container } catch { $false } }
+
+# With "powershell -File" (e.g. from cmd) a list like a,b or "a","b" arrives as ONE
+# string "a,b" (sometimes with the quotes): split it here. A folder whose own name
+# has a comma is kept whole.
+$Databases = @($Databases -split ',' | ForEach-Object { $_.Trim().Trim('"') } | Where-Object { $_ })
+$Web = @(foreach ($folder in $Web) {
+    if (Test-Folder $folder) { $folder }
+    else { $folder -split ',' | ForEach-Object { $_.Trim().Trim('"') } | Where-Object { $_ } }
+})
+
+foreach ($folder in $Web) {
+    if (-not (Test-Folder $folder)) {
+        Write-Host "The folder ""$folder"" does not exist." -ForegroundColor Red; exit 1
+    }
+}
 
 $connectionString = "Server=$Server;Database=master;Application Name=SQL-Lens (read only);ApplicationIntent=ReadOnly;Connect Timeout=30"
 if ($User) {
@@ -180,7 +238,10 @@ foreach ($requested in $Databases) {
 }
 
 if (-not $Output) {
-    $Output = ("extraction_{0}_{1}_{2:yyyyMMdd}.json" -f $serverName, ($realDatabases -join '_'), (Get-Date)) -replace '[^\w.-]+', '-'
+    # With -Web the name ends in _wf: on the PC it goes in extractions_wf, so that only
+    # extractions of the same kind are compared.
+    $kind = if ($Web) { '_wf' } else { '' }
+    $Output = ("extraction_{0}_{1}{2}_{3:yyyyMMdd}.json" -f $serverName, ($realDatabases -join '_'), $kind, (Get-Date)) -replace '[^\w.-]+', '-'
 }
 $path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Output)
 $warnings = New-Object System.Collections.Generic.List[string]
@@ -237,6 +298,11 @@ try {
             $warnings.Add("Could not read the jobs in msdb ($($_.Exception.Message)). The SQLAgentReaderRole role (or similar) is needed.")
             Write-Host "`nSQL Agent jobs: no permission on msdb, skipped"
         }
+    }
+    if ($Web) {
+        $w.Write(',"web":')
+        $webFiles = Write-WebFiles $w $Web $warnings
+        Write-Host "Web files: $webFiles (.js and .css)"
     }
     $w.Write(',"avisos":')
     Write-List $w $warnings
