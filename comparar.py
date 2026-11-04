@@ -1,8 +1,6 @@
 """
 Compares two extractions (two databases, or the same one on two servers) and
 writes an HTML report: what exists only in A, only in B, and what differs.
-
-    python comparar.py extraction_DEV_MESDB.json extraction_PRO_MESDB.json
 """
 
 import argparse

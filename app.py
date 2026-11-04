@@ -1,12 +1,5 @@
 """
 SQL-Lens as a desktop app: one window with three tabs (Extract, Map, Compare).
-
-A small web server on 127.0.0.1 serves app.html and builds the map and the
-comparison on demand. The window is the program's own (pywebview, on the
-WebView2 that Windows 10/11 already has), or Edge in "app" mode if that is not
-available, so nothing has to be installed. build_exe.bat packages it as
-"SQL-Lens.exe"; it also runs as `python app.py` (`--no-window` only prints the
-address, for testing).
 """
 
 import json

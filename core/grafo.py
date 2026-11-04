@@ -6,7 +6,7 @@ import re
 from collections import defaultdict
 
 from .analisis import analizar_modulo, partir_nombre, referencias_en_texto
-from .web import COMUNES, analizar_css, analizar_js, es_nombre_lookup
+from .web import COMUNES, analizar_ficheros, es_nombre_lookup
 
 TIPO_OBJETO = {
     'U': 'TABLA', 'ET': 'TABLA', 'V': 'VISTA',
@@ -290,8 +290,11 @@ class _Constructor:
         self.bases_web = sorted(self.ex['bases'], key=lambda b: b.lower() != 'mesdb')
         sueltos = {n['n'].lower() for n in self.g.nodos.values() if n['t'] in ('PROC', 'VISTA', 'FUNCION')}
         tablas = {n['n'].lower() for n in self.g.nodos.values() if n['t'] == 'TABLA'}
+        sueltos_y_tablas = sueltos | tablas
         analisis, por_nombre, definidas = {}, defaultdict(list), defaultdict(set)
-        for f in ficheros:
+        # Todos los análisis de una vez: los ya hechos otras veces salen de la caché en disco.
+        hechos = analizar_ficheros([(f.get('codigo') or '', f['ruta'].lower().endswith('.css')) for f in ficheros])
+        for f, a in zip(ficheros, hechos):
             ruta = f['ruta'].replace('\\', '/')
             carpeta, _, nombre = ruta.rpartition('/')
             tipo = 'CSS' if nombre.lower().endswith('.css') else 'JS'
@@ -301,7 +304,7 @@ class _Constructor:
                                l=codigo.count('\n') + 1)
             if self.incluir_codigo:
                 nodo['s'] = codigo
-            a = analisis[clave] = analizar_css(codigo) if tipo == 'CSS' else analizar_js(codigo)
+            analisis[clave] = a
             if a.dinamico:
                 nodo['d'] = 1
             por_nombre[nombre.lower()].append(clave)
@@ -325,6 +328,10 @@ class _Constructor:
                     a.lookups.add(texto)
                     continue
                 if not _NOMBRE_SUELTO.match(texto):
+                    continue
+                # Atajo: casi ninguna cadena es el nombre de un objeto, y partirla es lo lento (cientos
+                # de miles en las librerías). Sin corchetes, el nombre es lo que va tras el último punto.
+                if '[' not in texto and ']' not in texto and texto.rpartition('.')[2].lower() not in sueltos_y_tablas:
                     continue
                 srv, bd, esq, nombre = partir_nombre(texto)
                 if not srv and nombre and (nombre.lower() in sueltos or esq and nombre.lower() in tablas):
